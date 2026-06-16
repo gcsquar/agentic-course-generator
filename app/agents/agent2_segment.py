@@ -17,7 +17,6 @@ import llm
 
 def split_into_paragraphs(text: str) -> list[str]:
     """Divide text into separated abstracts (if only >= 50 symbols) for better ciatation. Criteria: \n\n"""
-    """Разбивает текст на осмысленные абзацы (>= 50 символов) для точного цитирования."""
     raw_parts = re.split(r"\n\s*\n", text)
     paragraphs = []
     buffer = ""
