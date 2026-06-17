@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Профиль ученика</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f4f5f7;
+    color: #1a1a2e;
+    padding: 32px 16px 64px;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 32px;
+  }
+
+  .section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  .section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 18px;
+  }
+
+  .field {
+    margin-bottom: 20px;
+  }
+  .field:last-child { margin-bottom: 0; }
+
+  label.field-label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+  }
+
+  input[type="text"], select, textarea {
+    width: 100%;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: #1a1a2e;
+    transition: border-color 0.15s;
+    background: #fafafa;
+  }
+  input[type="text"]:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #5b8dee;
+    background: #fff;
+  }
+
+  .options { display: flex; flex-direction: column; gap: 8px; }
+
+  .option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1.5px solid #e8e8e8;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .option:hover { border-color: #b0c4f5; background: #f7f9ff; }
+  .option input[type="radio"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: #5b8dee;
+    width: 16px;
+    height: 16px;
+  }
+  .option.selected {
+    border-color: #5b8dee;
+    background: #eef3fd;
+  }
+  .option-text { font-size: 0.9rem; }
+
+  .q-num {
+    display: inline-block;
+    background: #5b8dee;
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: 5px;
+    padding: 1px 7px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  .btn-generate {
+    width: 100%;
+    padding: 14px;
+    background: #5b8dee;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .btn-generate:hover { background: #3d72d4; }
+
+  .output-section {
+    display: none;
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .output-section.visible { display: block; }
+
+  .output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .output-header h2 { font-size: 1rem; font-weight: 700; }
+
+  .btn-copy {
+    padding: 6px 14px;
+    background: #f0f0f0;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-copy:hover { background: #e0e0e0; }
+  .btn-copy.copied { background: #d4edda; color: #155724; }
+
+  pre#output {
+    background: #f4f5f7;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #2d2d2d;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .error-msg {
+    color: #c0392b;
+    font-size: 0.85rem;
+    margin-top: 8px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Профиль ученика</h1>
+  <p class="subtitle">Заполни анкету — получишь готовый блок для <code>users.md</code>, который Agent 3 использует при персонализации уроков.</p>
+
+  <!-- BASICS -->
+  <div class="section">
+    <div class="section-title">Основное</div>
+
+    <div class="field">
+      <label class="field-label" for="name">Имя</label>
+      <input type="text" id="name" placeholder="Как тебя называть в материалах?">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="role">Роль / кто ты</label>
+      <input type="text" id="role" placeholder="студент, аспирант, инженер…">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="level">Уровень в теме</label>
+      <select id="level">
+        <option value="">— выбери —</option>
+        <option value="beginner">Новичок — базы почти нет</option>
+        <option value="intermediate">Средний — база есть, детали неровные</option>
+        <option value="expert">Эксперт — хочу детали и трейдоффы</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="interests">Что тебя интересует в этой теме</label>
+      <input type="text" id="interests" placeholder="практика, теория, интуиция, применение…">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="languages">Предпочтительный язык материала</label>
+      <select id="languages">
+        <option value="Russian">Русский</option>
+        <option value="English">English</option>
+        <option value="Russian, English">Русский или английский — без разницы</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- QUESTIONS -->
+  <div class="section">
+    <div class="section-title">Стиль обучения</div>
+
+    <!-- Q1 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">1</span>Как ты обычно начинаешь читать незнакомый материал?</label>
+      <div class="options" data-q="q1">
+        <label class="option"><input type="radio" name="q1" value="overview_first"><span class="option-text">Сначала смотрю структуру, заголовки, abstract — потом детали</span></label>
+        <label class="option"><input type="radio" name="q1" value="linear"><span class="option-text">Читаю линейно с начала, застреваю где непонятно</span></label>
+        <label class="option"><input type="radio" name="q1" value="result_first"><span class="option-text">Ищу главный результат и разматываю от него</span></label>
+        <label class="option"><input type="radio" name="q1" value="formulas_first"><span class="option-text">Сначала смотрю на формулы / код, потом текст</span></label>
+      </div>
+    </div>
+
+    <!-- Q2 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">2</span>Когда что-то непонятно — что помогает больше всего?</label>
+      <div class="options" data-q="q2">
+        <label class="option"><input type="radio" name="q2" value="from_scratch"><span class="option-text">Объясни с самого начала, даже если кажется что я это знаю</span></label>
+        <label class="option"><input type="radio" name="q2" value="scaffold"><span class="option-text">Дай общую структуру — в деталях разберусь сам</span></label>
+        <label class="option"><input type="radio" name="q2" value="example_first"><span class="option-text">Конкретный пример — и дальше сам</span></label>
+        <label class="option"><input type="radio" name="q2" value="mechanics"><span class="option-text">Хочу понять механику, не хочу просто «принять на веру»</span></label>
+      </div>
+    </div>
+
+    <!-- Q3 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">3</span>Если ты ошибаешься в рассуждении — как лучше реагировать?</label>
+      <div class="options" data-q="q3">
+        <label class="option"><input type="radio" name="q3" value="direct"><span class="option-text">Скажи прямо: «нет, вот правильно» — не трать время</span></label>
+        <label class="option"><input type="radio" name="q3" value="socratic"><span class="option-text">Задай наводящий вопрос, чтобы я нашёл ошибку сам</span></label>
+        <label class="option"><input type="radio" name="q3" value="soft"><span class="option-text">Не акцентируй — просто поправь и идём дальше</span></label>
+      </div>
+    </div>
+
+    <!-- Q4 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">4</span>Какой темп тебе комфортен?</label>
+      <div class="options" data-q="q4">
+        <label class="option"><input type="radio" name="q4" value="slow"><span class="option-text">Медленно, с повторами — лучше меньше, но понять глубоко</span></label>
+        <label class="option"><input type="radio" name="q4" value="medium"><span class="option-text">Средний — если теряюсь, скажу</span></label>
+        <label class="option"><input type="radio" name="q4" value="fast"><span class="option-text">Быстро — не нужно объяснять очевидное</span></label>
+      </div>
+    </div>
+
+    <!-- Q5 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">5</span>Что раздражает больше всего в объяснениях?</label>
+      <div class="options" data-q="q5">
+        <label class="option"><input type="radio" name="q5" value="too_much_intro"><span class="option-text">Слишком длинные вступления и «вода»</span></label>
+        <label class="option"><input type="radio" name="q5" value="no_check"><span class="option-text">Не проверяют, понял ли я — говорят и идут дальше</span></label>
+        <label class="option"><input type="radio" name="q5" value="its_simple"><span class="option-text">Говорят «это просто» когда мне непросто</span></label>
+        <label class="option"><input type="radio" name="q5" value="too_slow"><span class="option-text">Слишком медленно, разжёвывают то что я уже знаю</span></label>
+      </div>
+    </div>
+
+    <!-- Q6 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">6</span>Что важнее по итогу?</label>
+      <div class="options" data-q="q6">
+        <label class="option"><input type="radio" name="q6" value="intuition"><span class="option-text">Понять идею — зачем это, какая интуиция за этим</span></label>
+        <label class="option"><input type="radio" name="q6" value="reproduce"><span class="option-text">Уметь воспроизвести доказательство или решение</span></label>
+        <label class="option"><input type="radio" name="q6" value="blocker"><span class="option-text">Разобраться с конкретным местом, которое мешает двигаться</span></label>
+        <label class="option"><input type="radio" name="q6" value="practical"><span class="option-text">Увидеть как это работает на практике / в коде</span></label>
+      </div>
+    </div>
+
+    <!-- Q7 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">7</span>Много новых терминов сразу — как лучше?</label>
+      <div class="options" data-q="q7">
+        <label class="option"><input type="radio" name="q7" value="glossary_first"><span class="option-text">Дай словарь или список обозначений перед разбором</span></label>
+        <label class="option"><input type="radio" name="q7" value="one_by_one"><span class="option-text">Вводи по одному термину — не все сразу</span></label>
+        <label class="option"><input type="radio" name="q7" value="context_first"><span class="option-text">Сначала контекст зачем нужен термин, потом определение</span></label>
+      </div>
+    </div>
+
+    <!-- Q8 -->
+    <div class="field">
+      <label class="field-label"><span class="q-num">8</span>«Тебе нужно знать X, чтобы понять Y» — как поступить с X?</label>
+      <div class="options" data-q="q8">
+        <label class="option"><input type="radio" name="q8" value="full_prereq"><span class="option-text">Разбери X полностью перед тем как идти к Y</span></label>
+        <label class="option"><input type="radio" name="q8" value="brief_prereq"><span class="option-text">Дай краткое объяснение X и двигаемся к Y</span></label>
+        <label class="option"><input type="radio" name="q8" value="skip_prereq"><span class="option-text">Пропусти X — разберусь сам потом если понадобится</span></label>
+      </div>
+    </div>
+  </div>
+
+  <!-- SESSION STATE -->
+  <div class="section">
+    <div class="section-title">Текущее состояние (сессия)</div>
+    <div class="field">
+      <label class="field-label">Как ты сейчас?</label>
+      <div class="options" data-q="session">
+        <label class="option"><input type="radio" name="session" value="deep"><span class="option-text">Есть время и силы — хочу глубоко</span></label>
+        <label class="option"><input type="radio" name="session" value="quick"><span class="option-text">Мало времени — дай главное</span></label>
+        <label class="option"><input type="radio" name="session" value="light"><span class="option-text">Голова устала — нужно полегче</span></label>
+        <label class="option"><input type="radio" name="session" value="targeted"><span class="option-text">Есть конкретная точка непонимания — остальное ок</span></label>
+      </div>
+    </div>
+  </div>
+
+  <p class="error-msg" id="error-msg">Заполни имя и ответь хотя бы на половину вопросов.</p>
+  <button class="btn-generate" onclick="generate()">Сгенерировать профиль →</button>
+
+  <!-- OUTPUT -->
+  <div class="output-section" id="output-section">
+    <div class="output-header">
+      <h2>Блок для users.md</h2>
+      <div style="display:flex; gap:8px;">
+        <button class="btn-copy" id="copy-btn" onclick="copyOutput()">Копировать</button>
+        <button class="btn-copy" id="save-btn" onclick="saveToUsers()">Сохранить в users.md</button>
+      </div>
+    </div>
+    <pre id="output"></pre>
+    <p id="save-status" style="font-size:0.85rem; margin-top:10px;"></p>
+  </div>
+
+</div>
+
+<script>
+// Highlight selected options
+document.querySelectorAll('.option input[type="radio"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    const group = radio.closest('.options');
+    group.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+    radio.closest('.option').classList.add('selected');
+  });
+});
+
+// Mappings from answers to human-readable profile fields
+const maps = {
+  q1: {
+    overview_first:   "overview → details (start with structure, then dive in)",
+    linear:           "linear reading, stops at blockers",
+    result_first:     "result-first (find main theorem, then unpack backwards)",
+    formulas_first:   "formulas/code first, then prose explanation"
+  },
+  q2: {
+    from_scratch:     "explain from scratch even if I seem to know it",
+    scaffold:         "give scaffold/structure, I handle details myself",
+    example_first:    "concrete example first, then generalise",
+    mechanics:        "explain the mechanism, not just the result — no 'trust me'"
+  },
+  q3: {
+    direct:    "direct correction — say 'no, it's X', don't waste time",
+    socratic:  "leading question so I find the error myself",
+    soft:      "soft — acknowledge, correct quietly, move on without dwelling"
+  },
+  q4: {
+    slow:   "slow, with repetition — depth over breadth",
+    medium: "medium — I'll flag if I'm lost",
+    fast:   "fast — skip anything I'm expected to know"
+  },
+  q5: {
+    too_much_intro: "concise — skip preamble and filler",
+    no_check:       "check understanding often — don't just lecture and move on",
+    its_simple:     "never say 'this is simple/obvious' — just explain it",
+    too_slow:       "no over-explaining — respect that I know my basics"
+  },
+  q6: {
+    intuition: "intuition and big-picture — why does this exist, what's the core idea",
+    reproduce: "step-by-step so I can reproduce the proof/solution myself",
+    blocker:   "targeted — I have a specific blocker, fix that first",
+    practical: "practical — show me how this is used in code or real problems"
+  },
+  q7: {
+    glossary_first: "give a glossary / notation list before diving in",
+    one_by_one:     "introduce one term at a time, not all at once",
+    context_first:  "context before definition — show WHY the term exists first"
+  },
+  q8: {
+    full_prereq:  "full prerequisite explanation before continuing",
+    brief_prereq: "brief prerequisite recap, then continue",
+    skip_prereq:  "skip prerequisites — I'll look them up myself if needed"
+  },
+  session: {
+    deep:     "ready for depth — has time and energy",
+    quick:    "short on time — give only the essentials",
+    light:    "low energy — needs lighter load today",
+    targeted: "has a specific gap — focus there, rest is fine"
+  }
+};
+
+function val(name) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : null;
+}
+
+// Filled in by generate(), read by copyOutput()/saveToUsers().
+let lastBlock = '';
+let lastName = '';
+
+function generate() {
+  const name = document.getElementById('name').value.trim();
+  const errMsg = document.getElementById('error-msg');
+
+  const answered = ['q1','q2','q3','q4','q5','q6','q7','q8'].filter(q => val(q) !== null);
+  if (!name || answered.length < 4) {
+    errMsg.style.display = 'block';
+    return;
+  }
+  errMsg.style.display = 'none';
+
+  const role      = document.getElementById('role').value.trim();
+  const level     = document.getElementById('level').value;
+  const interests = document.getElementById('interests').value.trim();
+  const languages = document.getElementById('languages').value;
+
+  const levelLabels = { beginner: 'beginner', intermediate: 'intermediate', expert: 'expert' };
+
+  let lines = [`## ${name}`];
+  if (role)      lines.push(`- role: ${role}`);
+  if (level)     lines.push(`- level: ${levelLabels[level] || level}`);
+  if (interests) lines.push(`- interests: ${interests}`);
+  if (languages) lines.push(`- languages: ${languages}`);
+
+  lines.push('');
+  lines.push('<!-- learning profile (generated) -->');
+
+  const qLabels = {
+    q1: 'reading_style',
+    q2: 'explanation_style',
+    q3: 'error_handling',
+    q4: 'pace',
+    q5: 'tone_note',
+    q6: 'focus',
+    q7: 'new_terms',
+    q8: 'background_gaps'
+  };
+
+  for (const [q, field] of Object.entries(qLabels)) {
+    const v = val(q);
+    if (v) lines.push(`- ${field}: ${maps[q][v]}`);
+  }
+
+  const sessionVal = val('session');
+  if (sessionVal) {
+    lines.push('');
+    lines.push(`- session_state: ${maps.session[sessionVal]}`);
+  }
+
+  lastName = name;
+  lastBlock = lines.join('\n');
+
+  document.getElementById('output').textContent = lastBlock;
+  document.getElementById('save-status').textContent = '';
+  const sec = document.getElementById('output-section');
+  sec.classList.add('visible');
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function copyOutput() {
+  navigator.clipboard.writeText(lastBlock).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Скопировано ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Копировать'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Requires the page to be opened via profiling_server.py (http://localhost:8765/),
+// not as a local file:// — only the server can write to app/users.md.
+function saveToUsers() {
+  const status = document.getElementById('save-status');
+  status.style.color = '#666';
+  status.textContent = 'Сохраняю…';
+
+  fetch('/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: lastName, block: lastBlock })
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        status.style.color = '#155724';
+        status.textContent = `Сохранено в app/users.md ✓ (${lastName})`;
+      } else {
+        status.style.color = '#c0392b';
+        status.textContent = data.error || 'Ошибка сохранения.';
+      }
+    })
+    .catch(() => {
+      status.style.color = '#c0392b';
+      status.textContent = 'Не удалось подключиться к серверу. Запусти "python profiling_server.py" и открой http://localhost:8765/ (не сам HTML-файл).';
+    });
+}
+</script>
+</body>
+</html>

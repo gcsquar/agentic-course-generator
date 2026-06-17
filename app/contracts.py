@@ -82,6 +82,15 @@ class UserProfile:
     experience: str = ""
     languages: str = ""            # preferred language(s) for the output
     focus: str = ""                # what the learner specifically wants to focus on
+    # learning style fields (populated from profiling form / users.md)
+    reading_style: str = ""        # how they approach new material
+    explanation_style: str = ""    # what kind of explanation helps most
+    error_handling: str = ""       # how to handle mistakes
+    pace: str = ""                 # preferred speed
+    tone_note: str = ""            # specific tone preferences / annoyances
+    new_terms: str = ""            # how to introduce new terminology
+    background_gaps: str = ""      # how deep to go on prerequisites
+    session_state: str = ""        # current energy/time state for this session
     raw: str = ""                  # the full profile blob, for the LLM to read
 
     def to_dict(self) -> dict[str, Any]:
@@ -96,7 +105,7 @@ class PersonalizedLesson:
     title: str
     body: str                      # tailored lesson text (markdown)
     citations: list[str] = field(default_factory=list)  # added-info sources
-    # topic_fit: str = ""          # optional: note when the article topic poorly fits the user
+    topic_fit: str = ""            # non-empty when article topic poorly fits the user's interests
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

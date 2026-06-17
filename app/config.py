@@ -26,11 +26,15 @@ MIN_ARTICLE_CHARS = 600          # shorter than this -> probably not teachable
 # --- Agent 2 (segmentation) ---
 SEGMENT_INPUT_CHARS = 16000      # cap source text fed to the segmenter (cost/latency)
 
-# --- Agent 3 (research loop) ---
+# --- Agent 3 (personalization) ---
+PERSONALIZE_LESSON_CHARS = 6000   # cap on lesson.body fed into the draft prompt
+PERSONALIZE_PROFILE_CHARS = 1500  # cap on user.raw fed into the draft prompt
+
 # The open web is dirty: only cite background fetched from these trusted domains.
 TRUSTED_DOMAINS = [
-    "wikipedia.org", "britannica.com", "stanford.edu", "mit.edu",
-    "arxiv.org", "nature.com", "khanacademy.org", "ietf.org", ".edu",
+    "arxiv.org", "nature.com", "pubmed.ncbi.nlm.nih.gov",
+    "stanford.edu", "mit.edu", "harvard.edu", ".edu",
+    "khanacademy.org", "britannica.com", "ietf.org",
 ]
 RESEARCH_FETCH_CHARS = 4000      # cap text pulled from a researched page
 

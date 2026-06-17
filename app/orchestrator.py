@@ -51,11 +51,18 @@ def _write_readable(run: Run, personalized: list) -> None:
     by_user: dict[str, list] = {}
     for p in personalized:
         by_user.setdefault(p.user, []).append(p)
-    parts = ["# Personalized Lessons\n"]
+
+    parts: list[str] = ["# Personalized Lessons\n\n"]
     for user, lessons in by_user.items():
-        parts.append(f"\n## {user}\n")
+        parts.append(f"## {user}\n\n")
         for l in sorted(lessons, key=lambda x: x.order):
-            parts.append(f"\n### {l.order}. {l.title}\n\n{l.body}\n")
+            parts.append(f"### {l.order}. {l.title}\n\n")
+            parts.append(l.body.strip() + "\n\n")
+            if getattr(l, "topic_fit", ""):
+                parts.append(f"> **Примечание:** {l.topic_fit}\n\n")
             if l.citations:
-                parts.append("\n_Sources:_ " + ", ".join(l.citations) + "\n")
+                links = " · ".join(f"[{i+1}]({url})" for i, url in enumerate(l.citations))
+                parts.append(f"*Источники: {links}*\n\n")
+            parts.append("---\n\n")
+
     run.save_md("03_personalized", "".join(parts))
