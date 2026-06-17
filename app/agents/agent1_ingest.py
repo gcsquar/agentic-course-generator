@@ -12,6 +12,7 @@ import datetime
 import re
 
 import requests
+import trafilatura
 
 import config
 import llm
@@ -56,15 +57,9 @@ _MOCK = IngestResult(
 # helpers
 def _fetch(url: str) -> str | None:
     """Fetch HTML. Falls back to a browser-like request if the default bot is blocked."""
-    try:
-        import trafilatura
-    except ImportError:
-        trafilatura = None
-
-    if trafilatura is not None:
-        html = trafilatura.fetch_url(url)
-        if html:
-            return html
+    html = trafilatura.fetch_url(url)
+    if html:
+        return html
 
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=15)
