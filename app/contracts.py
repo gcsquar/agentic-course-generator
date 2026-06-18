@@ -57,10 +57,13 @@ class Curriculum:
     source_url: str
     key_concepts: list[str] = field(default_factory=list)  # article-level concepts (Agent 2 -> Agent 3 topic match)
     lessons: list[Lesson] = field(default_factory=list)
+    n_source_paragraphs: int = 0   # total paragraphs in the source (pre-cap); lets the
+                                   # coverage gate detect a dropped tail. 0 = unknown
 
     def to_dict(self) -> dict[str, Any]:
         return {"source_url": self.source_url,
                 "key_concepts": self.key_concepts,
+                "n_source_paragraphs": self.n_source_paragraphs,
                 "lessons": [l.to_dict() for l in self.lessons]}
 
 

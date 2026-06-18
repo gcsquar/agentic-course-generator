@@ -45,6 +45,10 @@ MIN_ARTICLE_CHARS = 600          # shorter than this -> probably not teachable
 # --- Agent 2 (segmentation) ---
 SEGMENT_INPUT_CHARS = 16000      # cap source text fed to the segmenter (cost/latency)
 MIN_LESSONS = 3                  # fewer than this isn't segmentation (1 giant lesson = collapse)
+# Max paragraphs fed to the segmenter. Generous so normal articles are fully covered; a
+# longer source's tail is DROPPED past this — but the coverage gate now flags that loss
+# instead of passing silently (it used to be a hard [:100] that hid half a long article).
+SEGMENT_MAX_PARAGRAPHS = 400
 
 # Faithfulness reference window: how much SOURCE the personalization gate and the
 # independent auditor may see when judging "is this claim in the source?". Must be big

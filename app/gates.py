@@ -96,17 +96,21 @@ def gate_segment(curriculum: Curriculum, source: IngestResult,
         issues.append("duplicate lesson titles (not distinct)")
 
     # Deterministic coverage: the paragraph ranges must tile the source cleanly.
-    issues.extend(_check_coverage(curriculum.lessons))
+    issues.extend(_check_coverage(curriculum.lessons, curriculum.n_source_paragraphs))
 
     return GateResult(passed=not issues, issues=issues)
 
 
-def _check_coverage(lessons: list) -> list[str]:
-    """The lessons' paragraph ranges should tile [0..] contiguously: start at 0 and
+def _check_coverage(lessons: list, n_source_paragraphs: int = 0) -> list[str]:
+    """The lessons' paragraph ranges should tile [0..N) contiguously: start at 0 and
     each lesson picks up exactly where the previous left off — no gap (source left
     in no lesson => 'we missed something') and no overlap (two lessons on the same
     paragraphs => redundancy). Exact arithmetic, no LLM. Skipped when ranges are
-    unset (e.g. mock/hand-built curricula have start_idx == -1)."""
+    unset (e.g. mock/hand-built curricula have start_idx == -1).
+
+    `n_source_paragraphs` is the FULL source paragraph count: if the lessons stop short
+    of it, the segmenter dropped the tail (e.g. a long article past SEGMENT_MAX_PARAGRAPHS)
+    — which the per-lesson tiling alone can't see, since it only knows the paragraphs it got."""
     ranged = [l for l in lessons if getattr(l, "start_idx", -1) >= 0
               and getattr(l, "end_idx", -1) >= 0]
     if len(ranged) != len(lessons):
@@ -125,6 +129,13 @@ def _check_coverage(lessons: list) -> list[str]:
         elif start < expected_start:
             issues.append(f"lesson {order}: paragraph range overlaps the previous lesson")
         expected_start = max(expected_start, end + 1)
+
+    # Tail loss: lessons end before the source does (the segmenter's cap dropped paragraphs).
+    if n_source_paragraphs and expected_start < n_source_paragraphs:
+        issues.append(
+            f"dropped tail: {n_source_paragraphs - expected_start} source paragraph(s) "
+            f"({expected_start}-{n_source_paragraphs - 1}) are past the segmenter cap and in no lesson"
+        )
     return issues
 
 

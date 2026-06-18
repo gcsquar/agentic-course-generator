@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from contracts import IngestResult, Curriculum, Lesson
+import config
 import llm
 
 def split_into_paragraphs(text: str) -> list[str]:
@@ -63,7 +64,8 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         )
     
     paragraphs = split_into_paragraphs(source.clean_text)
-    working_paragraphs = paragraphs[:100]
+    n_total = len(paragraphs)                          # full count, before the cap
+    working_paragraphs = paragraphs[:config.SEGMENT_MAX_PARAGRAPHS]
 
     numbered = "\n".join(
         f"[{i}] {p[:400]}{'...' if len(p) > 400 else ''}"
@@ -181,6 +183,7 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         source_url=source.url,
         key_concepts=list(all_key_concepts),
         lessons=lessons,
+        n_source_paragraphs=n_total,
     )
 
 
