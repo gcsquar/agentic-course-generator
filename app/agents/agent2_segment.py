@@ -12,6 +12,7 @@ This is a STUB. `mock=True` returns canned lessons so the pipeline runs end-to-e
 """
 from __future__ import annotations
 
+import re
 from contracts import IngestResult, Curriculum, Lesson
 import llm
 
@@ -101,21 +102,28 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         temperature=0.2,
     )
 
-    response = llm.chat_json(
-        system=system_prompt,
-        user=user_prompt,
-        temperature=0.2,
-    )
-
-    if isinstance(response, dict) and "segments" in response:
-        lessons_data = response["segments"]
+    # chat_json always returns a dict (json_object mode can't return a bare array).
+    if isinstance(response, dict):
+        if "start_idx" in response or "title" in response:
+            # LLM returned a single segment as a flat dict — wrap it
+            lessons_data = [response]
+        else:
+            # Find a list whose elements are dicts (skip string lists like key_concepts)
+            lessons_data = next(
+                (v for v in response.values()
+                 if isinstance(v, list) and v and isinstance(v[0], dict)),
+                None,
+            )
     elif isinstance(response, list):
         lessons_data = response
     else:
-        raise ValueError(f"LLM returned an invalid response format for segmentation: {type(response)}")
-    
+        lessons_data = None
+
     if not lessons_data:
-        raise ValueError("LLM returned an empty response for segmentation")
+        raise ValueError(f"LLM returned no lesson list. Raw response: {response}")
+
+    if not all(isinstance(seg, dict) for seg in lessons_data):
+        raise ValueError(f"LLM returned non-dict items in lesson list. Raw: {response}")
 
     lessons = []
     all_key_concepts = set()

@@ -37,6 +37,14 @@ def parse_users(path: Path) -> list[UserProfile]:
             experience=fields.get("experience", ""),
             languages=fields.get("languages") or fields.get("language", ""),
             focus=fields.get("focus", ""),
+            reading_style=fields.get("reading_style", ""),
+            explanation_style=fields.get("explanation_style", ""),
+            error_handling=fields.get("error_handling", ""),
+            pace=fields.get("pace", ""),
+            tone_note=fields.get("tone_note", ""),
+            new_terms=fields.get("new_terms", ""),
+            background_gaps=fields.get("background_gaps", ""),
+            session_state=fields.get("session_state", ""),
             raw=block.strip(),
         ))
     return users
