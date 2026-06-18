@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Профиль ученика</title>
+<title>Learner Profile</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -184,161 +184,159 @@
 <body>
 <div class="container">
 
-  <h1>Профиль ученика</h1>
-  <p class="subtitle">Заполни анкету — получишь готовый блок для <code>users.md</code>, который Agent 3 использует при персонализации уроков.</p>
+  <h1>Learner Profile</h1>
+  <p class="subtitle">Fill out this form to get a ready-made block for <code>users.md</code>, which Agent 3 uses to personalize lessons.</p>
 
   <!-- BASICS -->
   <div class="section">
-    <div class="section-title">Основное</div>
+    <div class="section-title">Basics</div>
 
     <div class="field">
-      <label class="field-label" for="name">Имя</label>
-      <input type="text" id="name" placeholder="Как тебя называть в материалах?">
+      <label class="field-label" for="name">Name</label>
+      <input type="text" id="name" placeholder="What should we call you in the materials?">
     </div>
 
     <div class="field">
-      <label class="field-label" for="role">Роль / кто ты</label>
-      <input type="text" id="role" placeholder="студент, аспирант, инженер…">
+      <label class="field-label" for="role">Role / who you are</label>
+      <input type="text" id="role" placeholder="student, grad student, engineer…">
     </div>
 
     <div class="field">
-      <label class="field-label" for="level">Уровень в теме</label>
+      <label class="field-label" for="level">Level in this topic</label>
       <select id="level">
-        <option value="">— выбери —</option>
-        <option value="beginner">Новичок — базы почти нет</option>
-        <option value="intermediate">Средний — база есть, детали неровные</option>
-        <option value="expert">Эксперт — хочу детали и трейдоффы</option>
+        <option value="">— choose —</option>
+        <option value="beginner">Beginner — almost no background</option>
+        <option value="intermediate">Intermediate — has the basics, details are patchy</option>
+        <option value="expert">Expert — want details and tradeoffs</option>
       </select>
     </div>
 
     <div class="field">
-      <label class="field-label" for="interests">Что тебя интересует в этой теме</label>
-      <input type="text" id="interests" placeholder="практика, теория, интуиция, применение…">
+      <label class="field-label" for="interests">What interests you about this topic</label>
+      <input type="text" id="interests" placeholder="practice, theory, intuition, applications…">
     </div>
 
     <div class="field">
-      <label class="field-label" for="languages">Предпочтительный язык материала</label>
+      <label class="field-label" for="languages">Preferred language for materials</label>
       <select id="languages">
-        <option value="Russian">Русский</option>
         <option value="English">English</option>
-        <option value="Russian, English">Русский или английский — без разницы</option>
       </select>
     </div>
   </div>
 
   <!-- QUESTIONS -->
   <div class="section">
-    <div class="section-title">Стиль обучения</div>
+    <div class="section-title">Learning style</div>
 
     <!-- Q1 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">1</span>Как ты обычно начинаешь читать незнакомый материал?</label>
+      <label class="field-label"><span class="q-num">1</span>How do you usually start reading unfamiliar material?</label>
       <div class="options" data-q="q1">
-        <label class="option"><input type="radio" name="q1" value="overview_first"><span class="option-text">Сначала смотрю структуру, заголовки, abstract — потом детали</span></label>
-        <label class="option"><input type="radio" name="q1" value="linear"><span class="option-text">Читаю линейно с начала, застреваю где непонятно</span></label>
-        <label class="option"><input type="radio" name="q1" value="result_first"><span class="option-text">Ищу главный результат и разматываю от него</span></label>
-        <label class="option"><input type="radio" name="q1" value="formulas_first"><span class="option-text">Сначала смотрю на формулы / код, потом текст</span></label>
+        <label class="option"><input type="radio" name="q1" value="overview_first"><span class="option-text">First I check structure, headings, abstract — then details</span></label>
+        <label class="option"><input type="radio" name="q1" value="linear"><span class="option-text">I read linearly from the start, and get stuck where it's unclear</span></label>
+        <label class="option"><input type="radio" name="q1" value="result_first"><span class="option-text">I look for the main result and unpack backwards from there</span></label>
+        <label class="option"><input type="radio" name="q1" value="formulas_first"><span class="option-text">I look at formulas/code first, then the text</span></label>
       </div>
     </div>
 
     <!-- Q2 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">2</span>Когда что-то непонятно — что помогает больше всего?</label>
+      <label class="field-label"><span class="q-num">2</span>When something is unclear, what helps most?</label>
       <div class="options" data-q="q2">
-        <label class="option"><input type="radio" name="q2" value="from_scratch"><span class="option-text">Объясни с самого начала, даже если кажется что я это знаю</span></label>
-        <label class="option"><input type="radio" name="q2" value="scaffold"><span class="option-text">Дай общую структуру — в деталях разберусь сам</span></label>
-        <label class="option"><input type="radio" name="q2" value="example_first"><span class="option-text">Конкретный пример — и дальше сам</span></label>
-        <label class="option"><input type="radio" name="q2" value="mechanics"><span class="option-text">Хочу понять механику, не хочу просто «принять на веру»</span></label>
+        <label class="option"><input type="radio" name="q2" value="from_scratch"><span class="option-text">Explain from scratch, even if it seems like I already know it</span></label>
+        <label class="option"><input type="radio" name="q2" value="scaffold"><span class="option-text">Give me the overall structure — I'll work out the details myself</span></label>
+        <label class="option"><input type="radio" name="q2" value="example_first"><span class="option-text">A concrete example — then I'll take it from there</span></label>
+        <label class="option"><input type="radio" name="q2" value="mechanics"><span class="option-text">I want to understand the mechanism, not just "take it on faith"</span></label>
       </div>
     </div>
 
     <!-- Q3 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">3</span>Если ты ошибаешься в рассуждении — как лучше реагировать?</label>
+      <label class="field-label"><span class="q-num">3</span>If you make a mistake in your reasoning, what's the best way to respond?</label>
       <div class="options" data-q="q3">
-        <label class="option"><input type="radio" name="q3" value="direct"><span class="option-text">Скажи прямо: «нет, вот правильно» — не трать время</span></label>
-        <label class="option"><input type="radio" name="q3" value="socratic"><span class="option-text">Задай наводящий вопрос, чтобы я нашёл ошибку сам</span></label>
-        <label class="option"><input type="radio" name="q3" value="soft"><span class="option-text">Не акцентируй — просто поправь и идём дальше</span></label>
+        <label class="option"><input type="radio" name="q3" value="direct"><span class="option-text">Say it directly: "no, here's the correct way" — don't waste time</span></label>
+        <label class="option"><input type="radio" name="q3" value="socratic"><span class="option-text">Ask a leading question so I find the mistake myself</span></label>
+        <label class="option"><input type="radio" name="q3" value="soft"><span class="option-text">Don't dwell on it — just correct it and move on</span></label>
       </div>
     </div>
 
     <!-- Q4 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">4</span>Какой темп тебе комфортен?</label>
+      <label class="field-label"><span class="q-num">4</span>What pace is comfortable for you?</label>
       <div class="options" data-q="q4">
-        <label class="option"><input type="radio" name="q4" value="slow"><span class="option-text">Медленно, с повторами — лучше меньше, но понять глубоко</span></label>
-        <label class="option"><input type="radio" name="q4" value="medium"><span class="option-text">Средний — если теряюсь, скажу</span></label>
-        <label class="option"><input type="radio" name="q4" value="fast"><span class="option-text">Быстро — не нужно объяснять очевидное</span></label>
+        <label class="option"><input type="radio" name="q4" value="slow"><span class="option-text">Slow, with repetition — better to cover less but understand deeply</span></label>
+        <label class="option"><input type="radio" name="q4" value="medium"><span class="option-text">Medium — I'll say if I get lost</span></label>
+        <label class="option"><input type="radio" name="q4" value="fast"><span class="option-text">Fast — no need to explain the obvious</span></label>
       </div>
     </div>
 
     <!-- Q5 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">5</span>Что раздражает больше всего в объяснениях?</label>
+      <label class="field-label"><span class="q-num">5</span>What annoys you most in explanations?</label>
       <div class="options" data-q="q5">
-        <label class="option"><input type="radio" name="q5" value="too_much_intro"><span class="option-text">Слишком длинные вступления и «вода»</span></label>
-        <label class="option"><input type="radio" name="q5" value="no_check"><span class="option-text">Не проверяют, понял ли я — говорят и идут дальше</span></label>
-        <label class="option"><input type="radio" name="q5" value="its_simple"><span class="option-text">Говорят «это просто» когда мне непросто</span></label>
-        <label class="option"><input type="radio" name="q5" value="too_slow"><span class="option-text">Слишком медленно, разжёвывают то что я уже знаю</span></label>
+        <label class="option"><input type="radio" name="q5" value="too_much_intro"><span class="option-text">Too-long introductions and filler</span></label>
+        <label class="option"><input type="radio" name="q5" value="no_check"><span class="option-text">Not checking whether I understood — just talking and moving on</span></label>
+        <label class="option"><input type="radio" name="q5" value="its_simple"><span class="option-text">Saying "this is simple" when it isn't simple for me</span></label>
+        <label class="option"><input type="radio" name="q5" value="too_slow"><span class="option-text">Going too slowly, over-explaining what I already know</span></label>
       </div>
     </div>
 
     <!-- Q6 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">6</span>Что важнее по итогу?</label>
+      <label class="field-label"><span class="q-num">6</span>What matters most in the end?</label>
       <div class="options" data-q="q6">
-        <label class="option"><input type="radio" name="q6" value="intuition"><span class="option-text">Понять идею — зачем это, какая интуиция за этим</span></label>
-        <label class="option"><input type="radio" name="q6" value="reproduce"><span class="option-text">Уметь воспроизвести доказательство или решение</span></label>
-        <label class="option"><input type="radio" name="q6" value="blocker"><span class="option-text">Разобраться с конкретным местом, которое мешает двигаться</span></label>
-        <label class="option"><input type="radio" name="q6" value="practical"><span class="option-text">Увидеть как это работает на практике / в коде</span></label>
+        <label class="option"><input type="radio" name="q6" value="intuition"><span class="option-text">Understand the idea — why it exists, what the intuition behind it is</span></label>
+        <label class="option"><input type="radio" name="q6" value="reproduce"><span class="option-text">Be able to reproduce the proof or solution myself</span></label>
+        <label class="option"><input type="radio" name="q6" value="blocker"><span class="option-text">Resolve the specific blocker that's stopping me from moving forward</span></label>
+        <label class="option"><input type="radio" name="q6" value="practical"><span class="option-text">See how it works in practice / in code</span></label>
       </div>
     </div>
 
     <!-- Q7 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">7</span>Много новых терминов сразу — как лучше?</label>
+      <label class="field-label"><span class="q-num">7</span>Lots of new terms at once — what's the best approach?</label>
       <div class="options" data-q="q7">
-        <label class="option"><input type="radio" name="q7" value="glossary_first"><span class="option-text">Дай словарь или список обозначений перед разбором</span></label>
-        <label class="option"><input type="radio" name="q7" value="one_by_one"><span class="option-text">Вводи по одному термину — не все сразу</span></label>
-        <label class="option"><input type="radio" name="q7" value="context_first"><span class="option-text">Сначала контекст зачем нужен термин, потом определение</span></label>
+        <label class="option"><input type="radio" name="q7" value="glossary_first"><span class="option-text">Give a glossary or list of notation before diving in</span></label>
+        <label class="option"><input type="radio" name="q7" value="one_by_one"><span class="option-text">Introduce one term at a time — not all at once</span></label>
+        <label class="option"><input type="radio" name="q7" value="context_first"><span class="option-text">Context first — why the term is needed — then the definition</span></label>
       </div>
     </div>
 
     <!-- Q8 -->
     <div class="field">
-      <label class="field-label"><span class="q-num">8</span>«Тебе нужно знать X, чтобы понять Y» — как поступить с X?</label>
+      <label class="field-label"><span class="q-num">8</span>"You need to know X to understand Y" — what should happen with X?</label>
       <div class="options" data-q="q8">
-        <label class="option"><input type="radio" name="q8" value="full_prereq"><span class="option-text">Разбери X полностью перед тем как идти к Y</span></label>
-        <label class="option"><input type="radio" name="q8" value="brief_prereq"><span class="option-text">Дай краткое объяснение X и двигаемся к Y</span></label>
-        <label class="option"><input type="radio" name="q8" value="skip_prereq"><span class="option-text">Пропусти X — разберусь сам потом если понадобится</span></label>
+        <label class="option"><input type="radio" name="q8" value="full_prereq"><span class="option-text">Explain X fully before moving on to Y</span></label>
+        <label class="option"><input type="radio" name="q8" value="brief_prereq"><span class="option-text">Give a brief explanation of X, then move on to Y</span></label>
+        <label class="option"><input type="radio" name="q8" value="skip_prereq"><span class="option-text">Skip X — I'll look it up myself later if I need to</span></label>
       </div>
     </div>
   </div>
 
   <!-- SESSION STATE -->
   <div class="section">
-    <div class="section-title">Текущее состояние (сессия)</div>
+    <div class="section-title">Current state (this session)</div>
     <div class="field">
-      <label class="field-label">Как ты сейчас?</label>
+      <label class="field-label">How are you feeling right now?</label>
       <div class="options" data-q="session">
-        <label class="option"><input type="radio" name="session" value="deep"><span class="option-text">Есть время и силы — хочу глубоко</span></label>
-        <label class="option"><input type="radio" name="session" value="quick"><span class="option-text">Мало времени — дай главное</span></label>
-        <label class="option"><input type="radio" name="session" value="light"><span class="option-text">Голова устала — нужно полегче</span></label>
-        <label class="option"><input type="radio" name="session" value="targeted"><span class="option-text">Есть конкретная точка непонимания — остальное ок</span></label>
+        <label class="option"><input type="radio" name="session" value="deep"><span class="option-text">I have time and energy — let's go deep</span></label>
+        <label class="option"><input type="radio" name="session" value="quick"><span class="option-text">Short on time — give me the essentials</span></label>
+        <label class="option"><input type="radio" name="session" value="light"><span class="option-text">Mentally tired — keep it light</span></label>
+        <label class="option"><input type="radio" name="session" value="targeted"><span class="option-text">I have one specific point of confusion — the rest is fine</span></label>
       </div>
     </div>
   </div>
 
-  <p class="error-msg" id="error-msg">Заполни имя и ответь хотя бы на половину вопросов.</p>
-  <button class="btn-generate" onclick="generate()">Сгенерировать профиль →</button>
+  <p class="error-msg" id="error-msg">Fill in your name and answer at least half the questions.</p>
+  <button class="btn-generate" onclick="generate()">Generate profile →</button>
 
   <!-- OUTPUT -->
   <div class="output-section" id="output-section">
     <div class="output-header">
-      <h2>Блок для users.md</h2>
+      <h2>Block for users.md</h2>
       <div style="display:flex; gap:8px;">
-        <button class="btn-copy" id="copy-btn" onclick="copyOutput()">Копировать</button>
-        <button class="btn-copy" id="save-btn" onclick="saveToUsers()">Сохранить в users.md</button>
+        <button class="btn-copy" id="copy-btn" onclick="copyOutput()">Copy</button>
+        <button class="btn-copy" id="save-btn" onclick="saveToUsers()">Save to users.md</button>
       </div>
     </div>
     <pre id="output"></pre>
@@ -482,9 +480,9 @@ function generate() {
 function copyOutput() {
   navigator.clipboard.writeText(lastBlock).then(() => {
     const btn = document.getElementById('copy-btn');
-    btn.textContent = 'Скопировано ✓';
+    btn.textContent = 'Copied ✓';
     btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Копировать'; btn.classList.remove('copied'); }, 2000);
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
   });
 }
 
@@ -493,7 +491,7 @@ function copyOutput() {
 function saveToUsers() {
   const status = document.getElementById('save-status');
   status.style.color = '#666';
-  status.textContent = 'Сохраняю…';
+  status.textContent = 'Saving…';
 
   fetch('/save', {
     method: 'POST',
@@ -504,15 +502,15 @@ function saveToUsers() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         status.style.color = '#155724';
-        status.textContent = `Сохранено в app/users.md ✓ (${lastName})`;
+        status.textContent = `Saved to app/users.md ✓ (${lastName})`;
       } else {
         status.style.color = '#c0392b';
-        status.textContent = data.error || 'Ошибка сохранения.';
+        status.textContent = data.error || 'Save failed.';
       }
     })
     .catch(() => {
       status.style.color = '#c0392b';
-      status.textContent = 'Не удалось подключиться к серверу. Запусти "python profiling_server.py" и открой http://localhost:8765/ (не сам HTML-файл).';
+      status.textContent = 'Could not connect to the server. Run "python profiling_server.py" and open http://localhost:8765/ (not the HTML file directly).';
     });
 }
 </script>

@@ -13,7 +13,7 @@
 - tone: short, with math analogies and examples
 - region: Russia
 - experience: 8 years building ML platforms
-- languages: English, Russian
+- languages: English
 - focus: when to use a technique and its tradeoffs, not derivations
 
 - reading_style: result-first (find main theorem, then unpack backwards)
@@ -25,11 +25,11 @@
 - session_state: ready for depth — has time and energy
 
 ## Anna
-- role: аспирант, математика, 2й год
+- role: PhD student, mathematics, 2nd year
 - level: intermediate
-- interests: теория вероятностей, статистика, математический анализ
-- languages: Russian
-- focus: понять идею и интуицию за доказательством, не заучить его
+- interests: probability theory, statistics, mathematical analysis
+- languages: English
+- focus: understand the idea and intuition behind a proof, not memorize it
 
 - reading_style: overview → details (start with structure, then dive in)
 - explanation_style: concrete example first, then generalise
@@ -40,14 +40,14 @@
 - background_gaps: brief prerequisite recap, then continue
 - session_state: ready for depth — has time and energy
 
-Дополнительно: Анна склонна тревожиться когда не понимает, ей важно слышать что застрять в этом месте — нормально. Хорошо реагирует на структуру вида «сначала поймём X, потом Y». Не любит когда её торопят.
+Additional note: Anna tends to get anxious when she doesn't understand something — it helps to hear that getting stuck here is normal. She responds well to a "first let's understand X, then Y" structure. She dislikes being rushed.
 
 ## Dima
-- role: студент бакалавриата, 3й курс, физфак
+- role: undergraduate student, 3rd year, physics department
 - level: beginner
-- interests: машинное обучение, хочет разобраться с нуля
-- languages: Russian
-- focus: понять базовые концепции, не теряться в обозначениях
+- interests: machine learning, wants to learn from the ground up
+- languages: English
+- focus: understand the basic concepts, not get lost in notation
 
 - reading_style: linear reading, stops at blockers
 - explanation_style: explain from scratch even if I seem to know it
@@ -58,14 +58,14 @@
 - background_gaps: full prerequisite explanation before continuing
 - session_state: ready for depth — has time and energy
 
-Дополнительно: Дима легко перегружается когда в одном абзаце много новых терминов сразу. Нужно явно разделять «что мы уже знаем» и «что вводим сейчас». Полезны аналогии из физики. Если кивает но не может пересказать — значит не понял, надо замедлиться.
+Additional note: Dima gets overwhelmed easily when a paragraph introduces too many new terms at once. It helps to explicitly separate "what we already know" from "what we're introducing now". Physics analogies work well for him. If he nods but can't repeat it back, he hasn't understood — slow down.
 
 ## Lena
-- role: ML-инженер, 3 года в индустрии
+- role: ML engineer, 3 years in industry
 - level: intermediate
-- interests: практическое применение, архитектуры, быстрый старт в новой теме
-- languages: Russian, English
-- focus: как это работает на практике и где применяется — не теория ради теории
+- interests: practical applications, architectures, getting up to speed quickly on a new topic
+- languages: English
+- focus: how it works in practice and where it's applied — not theory for its own sake
 
 - reading_style: result-first (find main theorem, then unpack backwards)
 - explanation_style: concrete example first, then generalise
@@ -76,4 +76,4 @@
 - background_gaps: brief prerequisite recap, then continue
 - session_state: short on time — give only the essentials
 
-Дополнительно: Лена раздражается от длинных теоретических вступлений. Лучший формат для неё — сразу показать что это решает на практике, потом формальное определение. Примеры кода или реальных систем работают лучше абстрактных математических конструкций.
+Additional note: Lena gets impatient with long theoretical preambles. The best format for her is to show what a thing solves in practice first, then give the formal definition. Code examples or real systems work better for her than abstract mathematical constructs.

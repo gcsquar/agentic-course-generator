@@ -59,10 +59,10 @@ def _write_readable(run: Run, personalized: list) -> None:
             parts.append(f"### {l.order}. {l.title}\n\n")
             parts.append(l.body.strip() + "\n\n")
             if getattr(l, "topic_fit", ""):
-                parts.append(f"> **Примечание:** {l.topic_fit}\n\n")
+                parts.append(f"> **Note:** {l.topic_fit}\n\n")
             if l.citations:
                 links = " · ".join(f"[{i+1}]({url})" for i, url in enumerate(l.citations))
-                parts.append(f"*Источники: {links}*\n\n")
+                parts.append(f"*Sources: {links}*\n\n")
             parts.append("---\n\n")
 
     run.save_md("03_personalized", "".join(parts))

@@ -67,7 +67,7 @@ class Handler(BaseHTTPRequestHandler):
 
         current = USERS_PATH.read_text(encoding="utf-8")
         if name.lower() in _existing_names(current):
-            self._send_json(409, {"ok": False, "error": f'Профиль "{name}" уже есть в users.md — переименуй и попробуй снова.'})
+            self._send_json(409, {"ok": False, "error": f'Profile "{name}" already exists in users.md — rename and try again.'})
             return
 
         USERS_PATH.write_text(current.rstrip() + "\n\n" + block + "\n", encoding="utf-8")

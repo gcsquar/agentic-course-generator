@@ -168,9 +168,9 @@ def _append_scholar_fallback(body: str, gap_topic: str, query: str) -> str:
     scholar_url = "https://scholar.google.com/scholar?q=" + urllib.parse.quote(query)
     note = (
         f"\n\n---\n"
-        f"**Для углублённого изучения темы «{gap_topic}»:**  \n"
-        f"Автоматический поиск не нашёл подходящего источника в доверенных доменах. "
-        f"Рекомендуем поискать самостоятельно:  \n"
+        f"**To go deeper on \"{gap_topic}\":**  \n"
+        f"Automated search did not find a suitable source in our trusted domains. "
+        f"We recommend searching for it yourself:  \n"
         f"[Google Scholar: {query}]({scholar_url})"
     )
     return body + note
