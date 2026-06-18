@@ -83,6 +83,14 @@ def gate_segment(curriculum: Curriculum, source: IngestResult,
     if not curriculum.lessons:
         return GateResult(passed=False, issues=["no lessons produced"])
 
+    # A single lesson spanning the whole article tiles perfectly but isn't segmentation.
+    # The coverage check below can't catch that (1 lesson trivially tiles), so guard count.
+    if len(curriculum.lessons) < config.MIN_LESSONS:
+        issues.append(
+            f"only {len(curriculum.lessons)} lesson(s) — source not segmented "
+            f"(need >= {config.MIN_LESSONS} distinct micro-lessons)"
+        )
+
     titles = [l.title.strip().lower() for l in curriculum.lessons]
     if len(titles) != len(set(titles)):
         issues.append("duplicate lesson titles (not distinct)")

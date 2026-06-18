@@ -71,25 +71,26 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
     )
 
     system_prompt = (
-        "You are an expert curriculum designer. Split the numbered paragraphs into semantic micro-lessons.\n"
-        "REQUIREMENTS:\n"
-        "- Create 3–8 micro-lessons.\n"
-        "- Choose only the paragraph where each micro-lesson STARTS (`start_idx`). Lessons are\n"
-        "  taken in order: each one runs until the next one begins, so they automatically\n"
-        "  partition the whole text with no gaps or overlaps — you do NOT supply an end.\n"
-        "- The first micro-lesson must start at paragraph 0; start indices must be increasing.\n"
-        "- Start a new micro-lesson where the topic shifts; paragraphs within a lesson must be\n"
-        "  logically connected and usable as standalone educational material.\n"
-        "Return ONLY a valid JSON array in the following format:\n"
-        "[\n"
-        "  {\n"
-        '    "id": "seg_001",\n'
-        '    "title": "Short informative name",\n'
-        '    "description": "What is this part about (1-2 lines)",\n'
-        '    "key_concepts": ["concept1", "concept2", ...],\n'
-        '    "start_idx": 0\n'
-        "  }\n"
-        "]\n"
+        "You are an expert curriculum designer. Your ONLY job is to mark WHERE each "
+        "micro-lesson STARTS in the numbered paragraphs below. You do NOT write lesson text.\n"
+        "RULES:\n"
+        "- Produce BETWEEN 3 AND 8 segments. Returning a single segment is WRONG — the article "
+        "must be split into several distinct micro-lessons.\n"
+        "- Each segment gives only the paragraph index where it STARTS (`start_idx`). Segments "
+        "run in order: each ends right before the next one begins, so they tile the whole text "
+        "with no gaps or overlaps. Do NOT supply an end index.\n"
+        "- The FIRST segment MUST have start_idx 0; start_idx values must STRICTLY INCREASE.\n"
+        "- Do NOT include paragraph text, an article 'body', or any full content — indices and "
+        "short metadata ONLY.\n"
+        "- Start a new segment where the topic shifts; a segment's paragraphs must be coherent "
+        "enough to stand alone as one lesson.\n"
+        'Return a JSON OBJECT with a "segments" array, exactly like:\n'
+        "{\n"
+        '  "segments": [\n'
+        '    {"title": "Short name", "description": "1-2 lines", "key_concepts": ["c1", "c2"], "start_idx": 0},\n'
+        '    {"title": "Next topic", "description": "1-2 lines", "key_concepts": ["c3"], "start_idx": 7}\n'
+        "  ]\n"
+        "}\n"
     )
 
     user_prompt = f"SOURCE PARAGRAPHS:\n{numbered}"
