@@ -25,7 +25,11 @@ _HEADERS = {
     )
 }
 
-_NEWS_HINTS = ("/news/", "/article/", "cnn.", "bbc.", "nytimes.", "reuters.", "bloomberg.")
+# URL-based news guess. Kept deliberately narrow: this signal now HARD-FAILS the
+# ingest gate, and Agent 1 gets 0 retries, so a false positive halts a good source.
+# Match clear news sections / outlets only — not the broad "/article/" many tutorial
+# sites use. The LLM judge is the broader, content-aware news check.
+_NEWS_HINTS = ("/news/", "cnn.", "bbc.", "nytimes.", "reuters.", "bloomberg.", "apnews.", "theguardian.")
 
 _MOCK = IngestResult(
     url="https://example.com/intro-to-transformers",
@@ -124,11 +128,18 @@ def _judge(title: str, url: str, clean_text: str) -> dict:
     """Ask the LLM whether this article is good source material for 2-3 lessons."""
     return llm.chat_json(
         system=(
-            "You judge whether an article is good source material for building "
-            "2-3 teaching lessons. ACCEPT substantive tutorials, explainers, "
-            "documentation, or in-depth articles with real teaching content. "
-            "REJECT news articles, thin or marketing pages, link lists, or anything "
-            "too shallow to teach from. "
+            "You judge whether an article is good SOURCE MATERIAL for building 2-3 teaching "
+            "lessons. The downstream pipeline adds the pedagogy itself — it segments and "
+            "rewrites this text into lessons — so the source does NOT need to be "
+            "tutorial-shaped.\n"
+            "ACCEPT anything with substantive, factual, teachable content: tutorials, "
+            "explainers, documentation, AND in-depth reference or encyclopedic articles (a "
+            "thorough Wikipedia article qualifies). Missing step-by-step structure, code "
+            "examples, or exercises is NOT a reason to reject — adding those is the pipeline's "
+            "job, not the source's.\n"
+            "REJECT only: news / time-sensitive reporting, marketing or sales pages, link "
+            "lists / navigation, stubs, or content genuinely too thin or off-topic to teach "
+            "from.\n"
             'Return JSON: {"accepted": boolean, "reason": string, '
             '"is_news": boolean, "score": number between 0 and 1, '
             '"description": string (1-2 sentence summary)}.'

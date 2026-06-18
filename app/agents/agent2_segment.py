@@ -74,10 +74,12 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         "You are an expert curriculum designer. Split the numbered paragraphs into semantic micro-lessons.\n"
         "REQUIREMENTS:\n"
         "- Create 3–8 micro-lessons.\n"
-        "- Each micro-lesson = a continuous range of paragraphs [start_idx, end_idx] (inclusive).\n"
-        "- Paragraphs within a single micro-lesson must be logically connected.\n"
-        "- Micro-lessons must cover the entire provided text sequentially, without gaps or overlaps.\n"
-        "- Each micro-lesson is finished on it's own and can be used as separated educational material\n"
+        "- Choose only the paragraph where each micro-lesson STARTS (`start_idx`). Lessons are\n"
+        "  taken in order: each one runs until the next one begins, so they automatically\n"
+        "  partition the whole text with no gaps or overlaps — you do NOT supply an end.\n"
+        "- The first micro-lesson must start at paragraph 0; start indices must be increasing.\n"
+        "- Start a new micro-lesson where the topic shifts; paragraphs within a lesson must be\n"
+        "  logically connected and usable as standalone educational material.\n"
         "Return ONLY a valid JSON array in the following format:\n"
         "[\n"
         "  {\n"
@@ -85,8 +87,7 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         '    "title": "Short informative name",\n'
         '    "description": "What is this part about (1-2 lines)",\n'
         '    "key_concepts": ["concept1", "concept2", ...],\n'
-        '    "start_idx": 0,\n'
-        '    "end_idx": 5\n'
+        '    "start_idx": 0\n'
         "  }\n"
         "]\n"
     )
@@ -125,32 +126,52 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
     if not all(isinstance(seg, dict) for seg in lessons_data):
         raise ValueError(f"LLM returned non-dict items in lesson list. Raw: {response}")
 
+    n = len(working_paragraphs)
+
+    # Deterministic tiling: trust the LLM only for CUT POINTS (where each lesson
+    # starts), never for the spans. We sort + dedupe the starts, force the first to
+    # paragraph 0, and derive each end = (next start - 1), last end = n-1. Coverage is
+    # then correct BY CONSTRUCTION — no gaps, no overlaps — no matter how sloppy the
+    # model's indices are. (Letting the LLM emit [start, end] left ~20% of the source
+    # in no lesson across retries; see INSIGHTS.md.)
+    # Clamp each start FIRST (junk/out-of-range -> 0..n-1), then sort by it, so the
+    # ordering always matches the real starts. Dedupe equal starts (keep the first).
+    candidates = sorted(
+        ((max(0, min(_safe_int(seg.get("start_idx"), 0), n - 1)), seg) for seg in lessons_data),
+        key=lambda c: c[0],
+    )
+    cuts: list[tuple[int, dict]] = []
+    seen_starts: set[int] = set()
+    for start, seg in candidates:
+        if start in seen_starts:
+            continue   # two lessons claiming the same start -> keep the first only
+        seen_starts.add(start)
+        cuts.append((start, seg))
+
+    if not cuts:                       # degenerate: one lesson over everything
+        cuts = [(0, {"title": "Full article"})]
+    if cuts[0][0] != 0:                # guarantee the source is covered from the top
+        cuts[0] = (0, cuts[0][1])
+
     lessons = []
     all_key_concepts = set()
-
-    for i, seg in enumerate(lessons_data):
-        try:
-            start = max(0, int(seg.get("start_idx", 0)))
-            end = min(len(working_paragraphs) - 1, int(seg.get("end_idx", start)))
-            if end < start:
-                start, end = end, start
-        except (TypeError, ValueError):
-            start, end = 0, len(working_paragraphs) - 1
-
+    for i, (start, seg) in enumerate(cuts):
+        end = cuts[i + 1][0] - 1 if i + 1 < len(cuts) else n - 1
         source_span = "\n\n".join(working_paragraphs[start : end + 1])
-        
-        body = seg.get("body", "").strip()
-        if not body:
-            body = f"### {seg.get('title', 'Lesson')}\n\n{seg.get('description', 'Content pending.')}"
 
+        # Extractive by design: the lesson body IS the raw source paragraphs for this
+        # range. Agent 2 never writes prose, so it cannot invent facts — the single
+        # rewrite step lives in Agent 3 (per learner), checked against this same span.
         lesson = Lesson(
             order=i + 1,
             title=seg.get("title", f"Micro-lesson {i+1}").strip(),
-            body=body,
+            body=source_span,
             source_span=source_span,
             description=seg.get("description", "").strip(),
             key_concepts=[kc.strip() for kc in seg.get("key_concepts", []) if kc.strip()],
-            n_formulas=0
+            n_formulas=0,
+            start_idx=start,
+            end_idx=end,
         )
         lessons.append(lesson)
         all_key_concepts.update(lesson.key_concepts)
@@ -160,3 +181,10 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         key_concepts=list(all_key_concepts),
         lessons=lessons,
     )
+
+
+def _safe_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default

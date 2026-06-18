@@ -10,6 +10,7 @@ token usage without touching agent logic.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from typing import Any
@@ -29,11 +30,21 @@ def _get_client():
         with _lock:
             if _client is None:
                 from openai import OpenAI
-                if not config.OPENAI_API_KEY:
+                if not config.LLM_API_KEY:
+                    key_name = ("OPENROUTER_API_KEY" if config.LLM_PROVIDER == "openrouter"
+                                else "OPENAI_API_KEY")
                     raise RuntimeError(
-                        "OPENAI_API_KEY is not set. Copy .env.example to .env and fill it in."
+                        f"No API key for provider '{config.LLM_PROVIDER}'. Set {key_name} "
+                        "in .env (copy .env.example to .env and fill it in)."
                     )
-                _client = OpenAI(api_key=config.OPENAI_API_KEY)
+                kwargs: dict[str, Any] = {"api_key": config.LLM_API_KEY}
+                if config.LLM_BASE_URL:  # OpenRouter (OpenAI-compatible endpoint)
+                    kwargs["base_url"] = config.LLM_BASE_URL
+                    kwargs["default_headers"] = {
+                        "HTTP-Referer": "https://github.com/agentic-course-generator",
+                        "X-Title": "Agentic Course Generator",
+                    }
+                _client = OpenAI(**kwargs)
     return _client
 
 
@@ -71,15 +82,46 @@ def chat(system: str, user: str, *, temperature: float | None = None) -> str:
 
 def chat_json(system: str, user: str, *, temperature: float | None = None) -> dict[str, Any]:
     """Chat completion constrained to a JSON object, returned parsed."""
-    def _call():
-        resp = _get_client().chat.completions.create(
+    temp = config.TEMPERATURE if temperature is None else temperature
+
+    def _call(use_format: bool) -> str:
+        kwargs: dict[str, Any] = dict(
             model=config.MODEL,
-            temperature=config.TEMPERATURE if temperature is None else temperature,
-            response_format={"type": "json_object"},
+            temperature=temp,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         )
-        return json.loads(resp.choices[0].message.content or "{}")
-    return _call_with_retry(_call)
+        if use_format:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = _get_client().chat.completions.create(**kwargs)
+        return resp.choices[0].message.content or "{}"
+
+    from openai import BadRequestError
+    try:
+        content = _call_with_retry(lambda: _call(True))
+    except BadRequestError:
+        # Some OpenRouter free models reject response_format=json_object. Retry without
+        # it and parse JSON out of the text — the prompts already ask for JSON output.
+        content = _call_with_retry(lambda: _call(False))
+    return _parse_json(content)
+
+
+def _parse_json(text: str) -> dict[str, Any]:
+    """Parse a JSON object/array from model output, tolerating ```json fences or
+    surrounding prose (needed for models that ignore strict JSON mode)."""
+    text = (text or "").strip()
+    fence = re.match(r"^```[a-zA-Z]*\s*(.*?)\s*```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"[\{\[].*[\}\]]", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+    return {}

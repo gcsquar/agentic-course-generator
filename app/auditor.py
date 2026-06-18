@@ -67,14 +67,21 @@ def _load(path: Path):
 
 
 def _compile(ingest, curriculum, personalized, gate_files) -> str:
-    src = (ingest.get("clean_text", "") or "")[:config.SEGMENT_INPUT_CHARS]
+    # The auditor must SEE what it judges: feeding it source[:16000] of a 76k article (and
+    # 300-char lesson snippets) made it flag in-source terms as invented — the same
+    # truncation bug as the gate (INSIGHTS.md #6). Give it the whole source and full bodies.
+    src = (ingest.get("clean_text", "") or "")[:config.FAITHFULNESS_SOURCE_CHARS]
+    # Lessons are extractive slices of `src` above, so a short snippet to identify each
+    # is enough — no need to duplicate the whole source here.
     lessons = "\n".join(
-        f"- [{l.get('order')}] {l.get('title')}: {(l.get('body') or '')[:300]}"
+        f"- [{l.get('order')}] {l.get('title')}: {(l.get('body') or '')[:600]}"
         for l in curriculum.get("lessons", [])
     )
+    # Personalized lessons ARE the deliverable being judged — give the auditor (almost)
+    # all of each, not a 250-char teaser it can't assess faithfulness from.
     pers = "\n".join(
         f"- {p.get('user')} [{p.get('order')}] {p.get('title')} "
-        f"(cites: {p.get('citations') or 'none'}): {(p.get('body') or '')[:250]}"
+        f"(cites: {p.get('citations') or 'none'}): {(p.get('body') or '')[:1500]}"
         for p in personalized
     )
     gates = "\n".join(

@@ -20,3 +20,4 @@ app/.venv/
 .DS_Store
 .idea/
 .vscode/
+INSIGHTS.md

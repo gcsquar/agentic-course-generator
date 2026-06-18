@@ -107,9 +107,13 @@ def _personalize_for_user(user: UserProfile, curriculum: Curriculum,
                            feedback: list[str], do_research: bool) -> list[PersonalizedLesson]:
     user_feedback = [f for f in feedback if user.name.lower() in f.lower()]
     out: list[PersonalizedLesson] = []
-    for lesson in curriculum.lessons:
+    covered: list[str] = []   # concepts taught in EARLIER lessons of this course
+    for lesson in sorted(curriculum.lessons, key=lambda l: l.order):
         lesson_feedback = _feedback_for_lesson(user_feedback, lesson.order)
-        out.append(_personalize_lesson(user, lesson, curriculum, lesson_feedback, do_research))
+        out.append(_personalize_lesson(user, lesson, curriculum, lesson_feedback, do_research, covered))
+        # A term introduced here is "already taught" for every later lesson, so a
+        # later lesson may reference it freely instead of flagging it as background.
+        covered.extend(lesson.key_concepts)
     return out
 
 
@@ -123,8 +127,9 @@ def _feedback_for_lesson(user_feedback: list[str], order: int) -> list[str]:
 # ------------------------------------------------------------------- per-lesson
 
 def _personalize_lesson(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
-                         lesson_feedback: list[str], do_research: bool) -> PersonalizedLesson:
-    draft = _generate_draft(user, lesson, curriculum, lesson_feedback)
+                         lesson_feedback: list[str], do_research: bool,
+                         covered: list[str]) -> PersonalizedLesson:
+    draft = _generate_draft(user, lesson, curriculum, lesson_feedback, covered)
     body = (draft.get("body") or "").strip() or lesson.body
     citations: list[str] = []
 
@@ -187,7 +192,7 @@ def _safe_research(query: str) -> tuple[str, str] | None:
 # --------------------------------------------------------------------- LLM calls
 
 def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
-                     lesson_feedback: list[str]) -> dict:
+                     lesson_feedback: list[str], covered: list[str]) -> dict:
     feedback_note = ""
     if lesson_feedback:
         feedback_note = (
@@ -211,10 +216,11 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "of Factor A. An expert in ML reading about Renaissance art is a smart non-specialist — "
         "NOT a domain beginner (don't over-simplify or patronize), but NOT a domain expert either "
         "(don't assume art-history knowledge). Give them the core idea, real-world significance, "
-        "and one sharp analogy to their own domain if natural. Skip specialist jargon entirely.\n\n"
+        "and AT MOST one analogy to their own domain — and only if it truly makes the idea click, "
+        "never a forced or decorative one. Skip specialist jargon entirely.\n\n"
         "Combined abstraction levels:\n"
         "  expert + aligned    → precise, dense, tradeoffs, minimal explanation of basics\n"
-        "  expert + misaligned → clear, jargon-free, core idea + one cross-domain analogy\n"
+        "  expert + misaligned → clear, jargon-free, core idea + an optional cross-domain analogy ONLY if it truly clarifies\n"
         "  intermediate + aligned    → worked examples, key terms defined once, some depth\n"
         "  intermediate + misaligned → accessible overview, skip sub-field specifics\n"
         "  beginner + aligned  → intuition first, step-by-step, explicit prerequisites\n"
@@ -230,13 +236,20 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "  When in doubt, look at the learner's role and interests to decide: a manager or "
         "analyst likely wants numbers; a student or general reader is fine with words.\n\n"
         "STEP 2 — write the tailored lesson:\n"
-        "- Stay strictly faithful to the ORIGINAL lesson: never invent facts, numbers, "
-        "or formulas that are not already in it.\n"
+        "- Faithfulness scope: you may use any concept that appears in the ORIGINAL lesson "
+        "OR was ALREADY TAUGHT in an earlier lesson (listed below). Those are established — "
+        "reference them freely (a one-line recall is fine). Never invent facts, numbers, "
+        "formulas, terms, or model names from outside that scope, even if you know them.\n"
+        "- If the lesson assumes a prerequisite that is in NEITHER the original NOR the "
+        "already-taught list, do NOT invent or explain it from your own knowledge — name it "
+        "in `needs_background` so it can be researched and cited.\n"
         "- Apply the abstraction level from Step 1 throughout: depth, vocabulary, "
         "example choice, and how much you explain vs. assume.\n"
+        "- Use an analogy ONLY when it makes a genuinely difficult concept easier to grasp. "
+        "An analogy that merely renames the content in the learner's jargon (e.g. calling "
+        "recipe ingredients 'training data' or 'activation functions') adds no understanding "
+        "and is worse than none — omit it. Never force one to satisfy a stated style.\n"
         "- Honor the learner's stated focus and preferred language if given in their profile.\n"
-        "- If the lesson assumes background knowledge this learner likely lacks at their "
-        "abstraction level, do NOT invent it — name it in `needs_background` instead.\n"
         "- In `topic_fit`: if misaligned, write one short sentence (e.g. 'Outside learner's "
         "domain — delivered as accessible overview for a smart non-specialist'). Empty if aligned.\n\n"
         'Return ONLY JSON: {"body": "<tailored lesson in markdown>", '
@@ -246,6 +259,8 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
     user_msg = (
         f"LEARNER PROFILE:\n{user.raw[:config.PERSONALIZE_PROFILE_CHARS]}\n\n"
         f"ARTICLE KEY CONCEPTS: {', '.join(curriculum.key_concepts) or '(none listed)'}\n\n"
+        f"ALREADY TAUGHT in earlier lessons (use freely, no background needed): "
+        f"{', '.join(dict.fromkeys(covered)) or '(none yet — this is among the first lessons)'}\n\n"
         f"ORIGINAL LESSON (order {lesson.order}): {lesson.title}\n"
         f"{lesson.body[:config.PERSONALIZE_LESSON_CHARS]}\n"
         f"Lesson key concepts: {', '.join(lesson.key_concepts) or '(none listed)'}"

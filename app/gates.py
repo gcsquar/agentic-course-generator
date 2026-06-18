@@ -27,13 +27,23 @@ def gate_ingest(result: IngestResult, *, use_llm: bool = True) -> GateResult:
         issues.append(
             f"clean_text too short ({len(result.clean_text)} < {config.MIN_ARTICLE_CHARS} chars)"
         )
+    # News is not teachable source material. Enforce the signal Agent 1 records in
+    # meta — this also catches the inconsistent "is_news=True but accepted=True" case
+    # the gate would otherwise wave through (Agent 1 gets 0 retries, so a halt here
+    # is correct: re-fetching the same news URL can't make it teachable).
+    if result.meta.get("is_news"):
+        issues.append("source looks like a news article (time-sensitive reporting, not teachable)")
     if not issues and use_llm:
         verdict = llm.chat_json(
             system=(
                 "You are a quality gate for article extraction. Decide whether the bulk of "
-                "this text is substantive, teachable article content. Fail ONLY if the text "
-                "is fundamentally unusable: mostly navigation/ads/link-lists, a login or "
-                "paywall, marketing with no real content, or off-topic.\n"
+                "this text is substantive, teachable article content suitable for building "
+                "lessons. Fail if the text is fundamentally unusable: mostly navigation/ads/"
+                "link-lists, a login or paywall, marketing with no real content, or off-topic.\n"
+                "ALSO fail if it is a NEWS ARTICLE or time-sensitive reporting (current events, "
+                "press release, sports/market/political coverage) — even when well-written, news "
+                "teaches no durable concept and is not valid source material. Evergreen tutorials, "
+                "explainers, documentation, and in-depth conceptual articles are fine.\n"
                 "DO NOT fail for cosmetic reasons: markdown formatting, headings, citation "
                 "markers, reference lists, or because the excerpt is truncated mid-sentence "
                 "(you are shown only the first part). Minor boilerplate leakage is acceptable "
@@ -44,6 +54,8 @@ def gate_ingest(result: IngestResult, *, use_llm: bool = True) -> GateResult:
             user=(
                 f"Title: {result.title}\n"
                 f"URL: {result.url}\n"
+                f"Published date (if any): {result.meta.get('published') or 'unknown'}\n"
+                f"Agent 1's news suspicion (is_news): {result.meta.get('is_news')}\n"
                 f"Extracted excerpt (first 4000 chars of a longer document):\n"
                 f"{result.clean_text[:4000]}"
             ),
@@ -57,66 +69,55 @@ def gate_ingest(result: IngestResult, *, use_llm: bool = True) -> GateResult:
 
 def gate_segment(curriculum: Curriculum, source: IngestResult,
                  *, use_llm: bool = True) -> GateResult:
-    """Agent 2 gate: standalone? distinct? faithful to source?
+    """Agent 2 gate: STRUCTURAL checks only.
 
-    Deterministic checks run always; the LLM faithfulness judge runs when use_llm.
+    Agent 2 is extractive — each lesson body IS the raw source paragraphs for its
+    paragraph range, so it cannot hallucinate and there is nothing to fact-check
+    here (faithfulness moved to Agent 3, the sole rewrite step). What CAN go wrong
+    is structure: no lessons, non-distinct lessons, or paragraph ranges that overlap
+    (redundancy) or leave gaps (we missed part of the source). `use_llm` is accepted
+    for signature compatibility but unused — these checks are deterministic.
     """
     issues: list[str] = []
 
-    # --- deterministic checks ---
     if not curriculum.lessons:
-        issues.append("no lessons produced")
+        return GateResult(passed=False, issues=["no lessons produced"])
+
     titles = [l.title.strip().lower() for l in curriculum.lessons]
     if len(titles) != len(set(titles)):
         issues.append("duplicate lesson titles (not distinct)")
-    # Summaries legitimately contain FEWER formulas than the source, so we only
-    # flag the clear hallucination signal: formulas that appear from nowhere.
-    if source.n_formulas == 0 and sum(l.n_formulas for l in curriculum.lessons) > 0:
-        issues.append("lessons contain formulas absent from the source (possible invention)")
 
-    # --- LLM faithfulness judge ---
-    if use_llm and curriculum.lessons:
-        issues.extend(_judge_faithfulness(curriculum, source))
+    # Deterministic coverage: the paragraph ranges must tile the source cleanly.
+    issues.extend(_check_coverage(curriculum.lessons))
 
     return GateResult(passed=not issues, issues=issues)
 
 
-def _judge_faithfulness(curriculum: Curriculum, source: IngestResult) -> list[str]:
-    """Diff each lesson against the source.
+def _check_coverage(lessons: list) -> list[str]:
+    """The lessons' paragraph ranges should tile [0..] contiguously: start at 0 and
+    each lesson picks up exactly where the previous left off — no gap (source left
+    in no lesson => 'we missed something') and no overlap (two lessons on the same
+    paragraphs => redundancy). Exact arithmetic, no LLM. Skipped when ranges are
+    unset (e.g. mock/hand-built curricula have start_idx == -1)."""
+    ranged = [l for l in lessons if getattr(l, "start_idx", -1) >= 0
+              and getattr(l, "end_idx", -1) >= 0]
+    if len(ranged) != len(lessons):
+        return []   # indices unavailable — nothing deterministic to check
 
-    Returns only BLOCKING (high-severity) issues — hallucinations / unsupported
-    claims / non-standalone lessons. Subjective 'could cover more' notes are
-    low-severity and deliberately do NOT fail the gate (else retries never settle).
-    """
-    lessons_blob = "\n\n".join(
-        f"### Lesson {l.order}: {l.title}\n{l.body}\n(claimed source excerpt: {l.source_span})"
-        for l in curriculum.lessons
-    )
-    verdict = llm.chat_json(
-        system=(
-            "You are a strict faithfulness reviewer for educational lessons. "
-            "Compare the generated lessons against the SOURCE article and list issues, each "
-            "tagged with a severity:\n"
-            '- "high": a claim, fact, number, or formula NOT supported by the source '
-            "(hallucination), or a lesson that is not self-contained/standalone.\n"
-            '- "low": the lesson is faithful but could cover more, or a minor topic is '
-            "omitted. These are suggestions, not errors.\n"
-            "Do NOT raise high severity merely because a lesson is a concise summary. "
-            'Return JSON {"issues": [{"severity": "high"|"low", "lesson": int, '
-            '"problem": "<one short sentence>"}]}.'
-        ),
-        user=(
-            f"SOURCE (title: {source.title}):\n{source.clean_text[:config.SEGMENT_INPUT_CHARS]}\n\n"
-            f"LESSONS:\n{lessons_blob}"
-        ),
-        temperature=0.0,
-    )
-    blocking = [
-        f"Lesson {i.get('lesson', '?')}: {i.get('problem', 'unsupported content')}"
-        for i in verdict.get("issues", [])
-        if str(i.get("severity", "")).lower() == "high"
-    ]
-    return blocking
+    issues: list[str] = []
+    expected_start = 0
+    for start, end, order in sorted((l.start_idx, l.end_idx, l.order) for l in ranged):
+        if end < start:
+            issues.append(f"lesson {order}: inverted paragraph range [{start},{end}]")
+            continue
+        if start > expected_start:
+            issues.append(
+                f"coverage gap: source paragraphs {expected_start}-{start - 1} are in no lesson"
+            )
+        elif start < expected_start:
+            issues.append(f"lesson {order}: paragraph range overlaps the previous lesson")
+        expected_start = max(expected_start, end + 1)
+    return issues
 
 
 def gate_personalize(personalized: list[PersonalizedLesson], curriculum: Curriculum,
@@ -136,20 +137,50 @@ def gate_personalize(personalized: list[PersonalizedLesson], curriculum: Curricu
     # --- LLM judge per user (faithful to original + fits the profile) ---
     if use_llm:
         originals = {l.order: l for l in curriculum.lessons}
+        # Faithfulness is judged against the WHOLE course, not one slice: a term
+        # established in another lesson is in-source, not invented. (Agent 2 is
+        # extractive + tiles the article, so this concatenation ~= the full source.)
+        full_source = "\n\n".join(
+            l.body for l in sorted(curriculum.lessons, key=lambda x: x.order)
+        )[:config.FAITHFULNESS_SOURCE_CHARS]
         by_user: dict[str, list[PersonalizedLesson]] = {}
         for p in personalized:
             by_user.setdefault(p.user, []).append(p)
         profiles = {u.name: u for u in users}
         for user, lessons in by_user.items():
-            issues.extend(_judge_personalization(profiles.get(user), lessons, originals))
+            issues.extend(_judge_personalization_confirmed(profiles.get(user), lessons, originals, full_source))
 
     return GateResult(passed=not issues, issues=issues)
 
 
+def _judge_personalization_confirmed(user: UserProfile | None, lessons: list[PersonalizedLesson],
+                                     originals: dict[int, "object"], full_source: str) -> list[str]:
+    """Judge once at temp 0; if it finds nothing, confirm with a second, hotter
+    sample before declaring this learner's lessons clean. A FAIL is trusted at once;
+    only a PASS is double-checked.
+
+    Closes the failure mode the independent auditor caught: the Supervisor re-runs a
+    failed stage until its gate passes, but one judge call is a single noisy sample,
+    so the loop tends to stop on the first *lenient* sample — letting an invented
+    "~3x faster" metric reach the final, gate-passed artifact. The confirmation draw
+    runs hotter (not a temp-0 re-run, which would just reproduce the lenient verdict)
+    so it is a genuinely independent sample; any high-severity finding blocks. Extra
+    cost lands only on the attempts that were about to pass."""
+    issues = _judge_personalization(user, lessons, originals, full_source, temperature=0.0)
+    if not issues:
+        issues = _judge_personalization(user, lessons, originals, full_source, temperature=0.5)
+    return issues
+
+
 def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedLesson],
-                           originals: dict[int, "object"]) -> list[str]:
+                           originals: dict[int, "object"], full_source: str,
+                           *, temperature: float = 0.0) -> list[str]:
     """Compare each tailored lesson to its original; block on hallucination or clear
-    level/tone mismatch. Stylistic nitpicks are low-severity and don't block."""
+    level/tone mismatch. Stylistic nitpicks are low-severity and don't block.
+
+    Hallucination is judged against `full_source` (the whole course), so a concept
+    established in another lesson is not mistaken for an invention.
+    `temperature` lets the confirmation pass draw an independent (hotter) sample."""
     if user is None:
         return []
     blob = "\n\n".join(
@@ -162,16 +193,30 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
         system=(
             "You review personalized lessons against their originals for one learner. "
             "List issues, each with a severity:\n"
-            '- "high": the tailored lesson adds facts/numbers/formulas NOT in the original '
-            "and NOT cited (hallucination), OR is clearly wrong for the learner's stated "
-            "level (e.g. dense math given to a self-described beginner).\n"
-            '- "low": minor tone/style mismatch or could be tailored more. Not an error.\n'
-            "A faithful rephrasing at the right level is GOOD — do not raise high for that. "
+            '- "high": the tailored lesson adds facts/numbers/formulas NOT supported anywhere '
+            "in the FULL SOURCE (shown below) and NOT cited (hallucination), OR is clearly "
+            "wrong for the learner's stated level (e.g. dense math given to a self-described "
+            "beginner). NOTE: a term that appears elsewhere in the FULL SOURCE (another "
+            "lesson) is faithful, not an invention — do not flag it.\n"
+            '- "high": a FORCED or DECORATIVE analogy — it relabels the source content in '
+            "the learner's own jargon without making a genuinely hard idea easier to grasp "
+            "(e.g. a cooking recipe rewritten so eggs are 'activation functions' and flour is "
+            "'hyperparameters'). A good analogy clarifies a real difficulty; a meaningless one "
+            "just translates vocabulary and must be sent back so the analogy is removed.\n"
+            '- "low": minor tone/style mismatch, could be tailored more, OR a term that IS in '
+            "the FULL SOURCE but is used without much explanation. Using an in-source term "
+            "without defining it is a clarity nuance, not a faithfulness error — and is "
+            "appropriate for an advanced learner. Not blocking.\n"
+            "A faithful rephrasing at the right level is GOOD — do not raise high for that. A "
+            "term/fact present in the FULL SOURCE needs NO citation; only background ADDED from "
+            "outside the source needs one — do not flag missing citations for in-source content.\n"
             'Return JSON {"issues": [{"severity": "high"|"low", "lesson": int, '
             '"problem": "<one short sentence>"}]}.'
         ),
-        user=f"LEARNER PROFILE:\n{user.raw}\n\nLESSONS:\n{blob}",
-        temperature=0.0,
+        user=(f"LEARNER PROFILE:\n{user.raw}\n\n"
+              f"FULL SOURCE (everything the course may faithfully draw on):\n{full_source}\n\n"
+              f"LESSONS:\n{blob}"),
+        temperature=temperature,
     )
     return [
         f"{user.name} lesson {i.get('lesson', '?')}: {i.get('problem', 'issue')}"

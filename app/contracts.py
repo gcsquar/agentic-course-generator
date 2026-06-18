@@ -43,6 +43,8 @@ class Lesson:
     description: str = ""          # short summary of this lesson (Agent 2)
     key_concepts: list[str] = field(default_factory=list)  # concepts this lesson teaches
     n_formulas: int = 0
+    start_idx: int = -1            # source paragraph range this lesson covers (Agent 2);
+    end_idx: int = -1              # the segmentation gate uses it to check coverage. -1 = unset
     # depends_on: list[int] = field(default_factory=list)  # optional: prerequisite lesson orders (topic graph)
 
     def to_dict(self) -> dict[str, Any]:

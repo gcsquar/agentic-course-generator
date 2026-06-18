@@ -31,8 +31,6 @@ integration "just works" when you meet the contract.
 | Agent 2 — Segmentation | `agents/agent2_segment.py` |
 | Agent 3 — Personalization | `agents/agent3_personalize.py` |
 
-> The agent files are **stubs** today (mock data + a `NotImplementedError` on the real
-> path). Each agent file is filled in against the contract in `contracts.py`.
 
 ## Setup
 
