@@ -133,8 +133,11 @@ def _personalize_lesson(user: UserProfile, lesson: Lesson, curriculum: Curriculu
     body = (draft.get("body") or "").strip() or lesson.body
     citations: list[str] = []
 
+    # Gap-filling research is for BEGINNERS only: an expert reading in their own field
+    # doesn't need fetched background, and adding "go deeper" Scholar links to an expert's
+    # lesson reads as ungrounded external clutter (the auditor flagged exactly that).
     gap_topic = draft.get("needs_background")
-    if do_research and gap_topic:
+    if do_research and gap_topic and _looks_like_beginner(user):
         query = _research_query(gap_topic, user)
         found = _safe_research(query)
         if found:
@@ -209,7 +212,7 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "Factor A — learner's stated level in their OWN domain:\n"
         "  beginner → high abstraction (intuition, plain language, everyday analogies)\n"
         "  intermediate → medium abstraction (some jargon ok, worked examples, key distinctions)\n"
-        "  expert → low abstraction (precise terminology, tradeoffs, no hand-holding)\n\n"
+        "  expert → low abstraction (precise terminology, assumes fundamentals, no hand-holding)\n\n"
         "Factor B — topic-profile alignment:\n"
         "  ALIGNED (article topic matches learner's domain/role/interests): use Factor A as-is.\n"
         "  MISALIGNED (topic is outside their domain): raise abstraction by one level regardless "
@@ -219,7 +222,7 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "and AT MOST one analogy to their own domain — and only if it truly makes the idea click, "
         "never a forced or decorative one. Skip specialist jargon entirely.\n\n"
         "Combined abstraction levels:\n"
-        "  expert + aligned    → precise, dense, tradeoffs, minimal explanation of basics\n"
+        "  expert + aligned    → precise, dense, minimal explanation of basics (cover tradeoffs ONLY if the source states them)\n"
         "  expert + misaligned → clear, jargon-free, core idea + an optional cross-domain analogy ONLY if it truly clarifies\n"
         "  intermediate + aligned    → worked examples, key terms defined once, some depth\n"
         "  intermediate + misaligned → accessible overview, skip sub-field specifics\n"
@@ -227,9 +230,10 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "  beginner + misaligned → very light touch, only the single most important takeaway\n\n"
         "Factor C — how the learner thinks about and uses information (infer from their role/profile):\n"
         "  Quantitative thinker (business, finance, engineering, data): prefer numbers, metrics, "
-        "percentages, benchmarks, and concrete measurements. When the lesson has quantitative "
-        "content, lead with it. When it doesn't, note approximate magnitudes ('~3x faster', "
-        "'cuts error rate in half') rather than only qualitative words.\n"
+        "percentages, benchmarks, and concrete measurements THAT APPEAR IN THE SOURCE — surface "
+        "and lead with them. If the lesson has no quantitative content, do NOT estimate or invent "
+        "magnitudes ('~3x faster', 'cuts error rate in half') — present it qualitatively; making "
+        "up numbers is a faithfulness violation, not personalization.\n"
         "  Qualitative thinker (humanities, arts, general audience, creative roles): prefer "
         "descriptive language ('significantly faster', 'much more accurate'). Numbers are fine "
         "when they appear in the source, but don't add or emphasize metrics that aren't central.\n"
@@ -243,6 +247,15 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "- If the lesson assumes a prerequisite that is in NEITHER the original NOR the "
         "already-taught list, do NOT invent or explain it from your own knowledge — name it "
         "in `needs_background` so it can be researched and cited.\n"
+        "- Personalization changes HOW the source is presented (tone, density, level, ordering) "
+        "— NEVER what it claims. Do NOT add your own critiques or judgments (e.g. 'this formula "
+        "is wrong/suboptimal'), deployment or implementation advice, or tradeoff analysis the "
+        "source does not state. A dense, precise rewrite for an expert is still a faithful "
+        "SUMMARY — not a code review, an opinion, or a how-to.\n"
+        "- If the source only NAMES or LISTS something without describing it (a linked or "
+        "recommended article, a reference, a cited work, a tool), present it as named — do NOT "
+        "invent its 'focus', a summary, what it is about, or why it fits. You know only what the "
+        "source actually says about it; if that is just a title, give just the title.\n"
         "- Apply the abstraction level from Step 1 throughout: depth, vocabulary, "
         "example choice, and how much you explain vs. assume.\n"
         "- Use an analogy ONLY when it makes a genuinely difficult concept easier to grasp. "

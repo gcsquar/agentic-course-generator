@@ -71,17 +71,16 @@ def _compile(ingest, curriculum, personalized, gate_files) -> str:
     # 300-char lesson snippets) made it flag in-source terms as invented — the same
     # truncation bug as the gate (INSIGHTS.md #6). Give it the whole source and full bodies.
     src = (ingest.get("clean_text", "") or "")[:config.FAITHFULNESS_SOURCE_CHARS]
-    # Lessons are extractive slices of `src` above, so a short snippet to identify each
-    # is enough — no need to duplicate the whole source here.
+    # Show the auditor the FULL lessons and personalized lessons — it can't judge whether a
+    # lesson is standalone, or whether a personalized claim is supported, from a truncated
+    # snippet (a 600-char cut even produced false "ends mid-sentence" findings).
     lessons = "\n".join(
-        f"- [{l.get('order')}] {l.get('title')}: {(l.get('body') or '')[:600]}"
+        f"- [{l.get('order')}] {l.get('title')}: {l.get('body') or ''}"
         for l in curriculum.get("lessons", [])
     )
-    # Personalized lessons ARE the deliverable being judged — give the auditor (almost)
-    # all of each, not a 250-char teaser it can't assess faithfulness from.
     pers = "\n".join(
         f"- {p.get('user')} [{p.get('order')}] {p.get('title')} "
-        f"(cites: {p.get('citations') or 'none'}): {(p.get('body') or '')[:1500]}"
+        f"(cites: {p.get('citations') or 'none'}): {p.get('body') or ''}"
         for p in personalized
     )
     gates = "\n".join(

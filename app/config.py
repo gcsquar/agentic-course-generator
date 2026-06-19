@@ -49,6 +49,10 @@ MIN_LESSONS = 3                  # fewer than this isn't segmentation (1 giant l
 # longer source's tail is DROPPED past this — but the coverage gate now flags that loss
 # instead of passing silently (it used to be a hard [:100] that hid half a long article).
 SEGMENT_MAX_PARAGRAPHS = 400
+# A SMELL threshold, not a hard rule: a lesson spanning more paragraphs than this has almost
+# certainly lumped several subtopics (one 52-paragraph lesson held a quarter of an article).
+# Generous on purpose — a genuinely coherent subtopic can be large; this only catches dumping.
+MAX_LESSON_PARAGRAPHS = 30
 
 # Faithfulness reference window: how much SOURCE the personalization gate and the
 # independent auditor may see when judging "is this claim in the source?". Must be big

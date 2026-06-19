@@ -98,6 +98,16 @@ def gate_segment(curriculum: Curriculum, source: IngestResult,
     # Deterministic coverage: the paragraph ranges must tile the source cleanly.
     issues.extend(_check_coverage(curriculum.lessons, curriculum.n_source_paragraphs))
 
+    # Smell check (generous): a lesson spanning a huge run of paragraphs has almost certainly
+    # lumped several subtopics — flag it so the segmenter re-splits. Not a hard size law (a
+    # coherent subtopic may be large); it only fires on egregious dumping.
+    for l in curriculum.lessons:
+        if l.start_idx >= 0 and (l.end_idx - l.start_idx + 1) > config.MAX_LESSON_PARAGRAPHS:
+            issues.append(
+                f"lesson {l.order} spans {l.end_idx - l.start_idx + 1} paragraphs "
+                f"(> {config.MAX_LESSON_PARAGRAPHS}) — likely lumps several subtopics; split it"
+            )
+
     return GateResult(passed=not issues, issues=issues)
 
 
@@ -215,8 +225,12 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
             '- "high": the tailored lesson adds facts/numbers/formulas NOT supported anywhere '
             "in the FULL SOURCE (shown below) and NOT cited (hallucination), OR is clearly "
             "wrong for the learner's stated level (e.g. dense math given to a self-described "
-            "beginner). NOTE: a term that appears elsewhere in the FULL SOURCE (another "
-            "lesson) is faithful, not an invention — do not flag it.\n"
+            "beginner). NOTE: a term/concept that appears elsewhere in the FULL SOURCE (another "
+            "lesson) is faithful, not an invention — do not flag it. BUT topic words appearing "
+            "in the source do NOT support a specific CLAIM: if the lesson describes, summarizes, "
+            "or characterizes a named item (a linked/recommended article, reference, or tool) "
+            "that the SOURCE only names without describing, that description is invented — flag "
+            "it high even though related words appear elsewhere in the source.\n"
             '- "high": a FORCED or DECORATIVE analogy — it relabels the source content in '
             "the learner's own jargon without making a genuinely hard idea easier to grasp "
             "(e.g. a cooking recipe rewritten so eggs are 'activation functions' and flour is "
