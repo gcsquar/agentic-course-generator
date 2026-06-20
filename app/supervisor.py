@@ -32,7 +32,7 @@ class Supervisor:
         self.state: dict[str, Any] = {}   # blackboard: stage name -> artifact
 
     # -- public entry ----------------------------------------------------
-    def build(self, url: str) -> list:
+    def build(self, url: str, *, only_user: str | None = None) -> list:
         print(f"[supervisor] run {self.run.run_id}  mock={self.mock}")
 
         # Agent 1 gets 0 retries: re-fetching the same URL can't fix a bad source.
@@ -56,6 +56,7 @@ class Supervisor:
         )
 
         users = user_profiles.parse_users(config.USERS_FILE)
+        users = user_profiles.filter_users(users, only_user)
         personalized, _g3 = self._stage(
             "03_personalized",
             produce=lambda fb: agent3_personalize.personalize(

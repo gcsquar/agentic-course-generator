@@ -15,7 +15,7 @@ from storage import Run
 from agents import agent1_ingest, agent2_segment, agent3_personalize
 
 
-def run_sequential(url: str, run: Run, *, mock: bool = False) -> list:
+def run_sequential(url: str, run: Run, *, mock: bool = False, only_user: str | None = None) -> list:
     print(f"[orchestrator] run {run.run_id}  mock={mock}")
 
     # --- Agent 1 -------------------------------------------------------
@@ -37,6 +37,7 @@ def run_sequential(url: str, run: Run, *, mock: bool = False) -> list:
 
     # --- Agent 3 -------------------------------------------------------
     users = user_profiles.parse_users(config.USERS_FILE)
+    users = user_profiles.filter_users(users, only_user)
     personalized = agent3_personalize.personalize(curriculum, users, mock=mock)
     run.save_json("03_personalized", [p.to_dict() for p in personalized])
     _write_readable(run, personalized)
