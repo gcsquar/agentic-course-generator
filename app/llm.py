@@ -1,11 +1,20 @@
-"""Thin OpenAI wrapper used by every agent and gate.
+"""Thin OpenAI-compatible wrapper used by every agent and gate.
 
 Two helpers:
   - chat()      -> free-form text completion
   - chat_json() -> parsed JSON object (uses response_format=json_object)
 
-Keeping this in one place means we can swap models, add retries, or log
-token usage without touching agent logic.
+Both take an optional `model=` so a caller can pick a role-specific model
+(config.JUDGE_MODEL / AUDITOR_MODEL) instead of the default config.MODEL —
+keeping all model/temperature/timeout/usage policy in this one place.
+
+Robustness baked in here so agent logic stays clean:
+  - rate-limit / transient-connection retries with backoff;
+  - capability-aware kwargs: some models reject `response_format=json_object`
+    or a custom `temperature` with a 400 — we detect that and retry without the
+    offending field instead of failing the whole call;
+  - a per-request timeout so a hung completion can't block a worker forever;
+  - lightweight token-usage accounting (per-call log + a running total).
 """
 from __future__ import annotations
 
@@ -23,7 +32,39 @@ _lock = threading.Lock()
 # How many times to retry on rate-limit / transient connection errors.
 _RATE_LIMIT_RETRIES = 3
 
+# --- token-usage accounting -------------------------------------------------
+# Agent 3 fans out across threads, so guard the running totals with a lock.
+_usage_lock = threading.Lock()
+_usage_totals = {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
+
+def _record_usage(model: str, usage: Any) -> None:
+    if not usage:
+        return
+    prompt = getattr(usage, "prompt_tokens", 0) or 0
+    completion = getattr(usage, "completion_tokens", 0) or 0
+    total = getattr(usage, "total_tokens", 0) or (prompt + completion)
+    with _usage_lock:
+        _usage_totals["prompt"] += prompt
+        _usage_totals["completion"] += completion
+        _usage_totals["total"] += total
+        _usage_totals["calls"] += 1
+    print(f"[llm] {model} tokens: prompt={prompt} completion={completion} total={total}")
+
+
+def usage_summary() -> dict[str, int]:
+    """Return a copy of the cumulative token usage for this process."""
+    with _usage_lock:
+        return dict(_usage_totals)
+
+
+def reset_usage() -> None:
+    with _usage_lock:
+        for k in _usage_totals:
+            _usage_totals[k] = 0
+
+
+# --- client -----------------------------------------------------------------
 def _get_client():
     global _client
     if _client is None:
@@ -65,46 +106,65 @@ def _call_with_retry(fn):
             time.sleep(wait)
 
 
-def chat(system: str, user: str, *, temperature: float | None = None) -> str:
+# --- capability-aware completion --------------------------------------------
+def _complete(messages: list[dict], *, model: str, temperature: float | None,
+              want_json: bool) -> str:
+    """One completion, adapting to the model's capabilities.
+
+    Some models reject `response_format=json_object` or a non-default
+    `temperature` with a 400. Rather than fail, we strip whichever field the
+    error names and retry — so the SAME call works across OpenAI, OpenRouter free
+    models, and reasoning models that pin temperature to 1."""
+    from openai import BadRequestError
+
+    send_json = want_json
+    send_temp = temperature is not None
+
+    for _ in range(3):   # at most: drop json, then drop temperature
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "timeout": config.LLM_TIMEOUT,
+        }
+        if send_temp:
+            kwargs["temperature"] = temperature
+        if send_json:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        try:
+            resp = _call_with_retry(lambda: _get_client().chat.completions.create(**kwargs))
+        except BadRequestError as exc:
+            msg = str(exc).lower()
+            if send_json and ("response_format" in msg or "json" in msg):
+                send_json = False          # model can't do strict JSON mode — parse from text
+                continue
+            if send_temp and "temperature" in msg:
+                send_temp = False          # model pins temperature — let it use its default
+                continue
+            raise
+        _record_usage(model, getattr(resp, "usage", None))
+        return resp.choices[0].message.content or ("{}" if want_json else "")
+
+    raise RuntimeError("LLM call failed after stripping unsupported parameters")
+
+
+# --- public helpers ---------------------------------------------------------
+def chat(system: str, user: str, *, temperature: float | None = None,
+         model: str | None = None) -> str:
     """Single-turn chat completion returning plain text."""
-    def _call():
-        resp = _get_client().chat.completions.create(
-            model=config.MODEL,
-            temperature=config.TEMPERATURE if temperature is None else temperature,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        return resp.choices[0].message.content or ""
-    return _call_with_retry(_call)
+    temp = config.TEMPERATURE if temperature is None else temperature
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": user}]
+    return _complete(messages, model=model or config.MODEL, temperature=temp, want_json=False)
 
 
-def chat_json(system: str, user: str, *, temperature: float | None = None) -> dict[str, Any]:
+def chat_json(system: str, user: str, *, temperature: float | None = None,
+              model: str | None = None) -> dict[str, Any]:
     """Chat completion constrained to a JSON object, returned parsed."""
     temp = config.TEMPERATURE if temperature is None else temperature
-
-    def _call(use_format: bool) -> str:
-        kwargs: dict[str, Any] = dict(
-            model=config.MODEL,
-            temperature=temp,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        if use_format:
-            kwargs["response_format"] = {"type": "json_object"}
-        resp = _get_client().chat.completions.create(**kwargs)
-        return resp.choices[0].message.content or "{}"
-
-    from openai import BadRequestError
-    try:
-        content = _call_with_retry(lambda: _call(True))
-    except BadRequestError:
-        # Some OpenRouter free models reject response_format=json_object. Retry without
-        # it and parse JSON out of the text — the prompts already ask for JSON output.
-        content = _call_with_retry(lambda: _call(False))
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": user}]
+    content = _complete(messages, model=model or config.MODEL, temperature=temp, want_json=True)
     return _parse_json(content)
 
 

@@ -3,13 +3,17 @@
 The sequential orchestrator (orchestrator.py) just ran each stage once and let
 gate failures fall through. The Supervisor instead OWNS the run:
 
-  - state: it holds every stage's artifact (the blackboard) and persists each try
-  - routing: it decides the stage order and whether to advance or halt
-  - retries: when a gate fails it RE-RUNS that stage (bounded by MAX_RETRIES)
+  - state: it keeps each stage's final artifact and persists every attempt (the
+    persisted run folder is the real shared state; `self.state` is a convenience
+    handle for debugging/extension, not read by downstream stages today)
+  - control: it runs the fixed stage order (A1 -> A2 -> A3) and decides whether to
+    advance or halt after each gate
+  - retries: when a gate fails it RE-RUNS that stage (bounded by MAX_RETRIES),
+    threading the gate's issues back into the agent as feedback
 
-TB.1 (this) builds the structure + the bounded retry loop. The retry currently
-re-produces from scratch; TB.2 threads the gate's issues back into the agent as
-feedback so the retry is actually informed.
+KNOWN GAP (ROADMAP 2.1): only Agent 1 halts on a failed gate; stages 2 & 3 ship
+their last attempt even if its gate never passed. Making that terminal state
+explicit (passed/degraded/halted) is tracked in ROADMAP.md.
 """
 from __future__ import annotations
 
@@ -29,7 +33,7 @@ class Supervisor:
         self.run = run
         self.mock = mock
         self.use_llm = not mock
-        self.state: dict[str, Any] = {}   # blackboard: stage name -> artifact
+        self.state: dict[str, Any] = {}   # stage name -> final artifact (debug handle; not read downstream)
 
     # -- public entry ----------------------------------------------------
     def build(self, url: str, *, only_user: str | None = None) -> list:

@@ -44,9 +44,19 @@ def web_search(query: str, *, max_results: int = 10) -> list[tuple[str, str]]:
 
 
 def is_trusted(url: str) -> bool:
+    """A host is trusted iff it equals a trusted domain or is a real subdomain of
+    one. Anchored on a dot boundary so `evil-arxiv.org` does NOT pass as `arxiv.org`
+    (plain `endswith("arxiv.org")` would let it through — that suffix-spoof is the
+    whole point of having a trust filter). A bare entry like ".edu" still matches any
+    *.edu host via the subdomain clause."""
     host = urllib.parse.urlparse(url).netloc.lower()
-    return any(host == d or host.endswith("." + d.lstrip(".")) or host.endswith(d)
-               for d in config.TRUSTED_DOMAINS)
+    # strip a port if present (e.g. "example.edu:8080")
+    host = host.split(":", 1)[0]
+    for d in config.TRUSTED_DOMAINS:
+        d = d.strip().lstrip(".").lower()
+        if host == d or host.endswith("." + d):
+            return True
+    return False
 
 
 def fetch_clean(url: str) -> str:

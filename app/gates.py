@@ -60,6 +60,7 @@ def gate_ingest(result: IngestResult, *, use_llm: bool = True) -> GateResult:
                 f"{result.clean_text[:4000]}"
             ),
             temperature=0.0,
+            model=config.JUDGE_MODEL,
         )
         if not verdict.get("passed", False):
             judge_issues = verdict.get("issues") or ["LLM judge rejected extracted article prose"]
@@ -250,6 +251,7 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
               f"FULL SOURCE (everything the course may faithfully draw on):\n{full_source}\n\n"
               f"LESSONS:\n{blob}"),
         temperature=temperature,
+        model=config.JUDGE_MODEL,
     )
     return [
         f"{user.name} lesson {i.get('lesson', '?')}: {i.get('problem', 'issue')}"

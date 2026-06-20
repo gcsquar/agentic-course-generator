@@ -46,6 +46,13 @@ def main() -> None:
         from auditor import audit_run
         audit_run(run)
 
+    if not args.mock:
+        import llm
+        u = llm.usage_summary()
+        if u["calls"]:
+            print(f"[llm] run total: {u['calls']} calls, {u['total']} tokens "
+                  f"(prompt={u['prompt']}, completion={u['completion']})")
+
     print(f"\nDone. Outputs in: {run.dir}")
 
 

@@ -49,6 +49,7 @@ def audit_run(run: Run) -> dict:
         system=_SYSTEM,
         user=_compile(ingest, curriculum, personalized, gate_files),
         temperature=0.0,
+        model=config.AUDITOR_MODEL,
     )
     run.save_json("99_audit", report)
     run.save_md("99_audit", _render(report))
