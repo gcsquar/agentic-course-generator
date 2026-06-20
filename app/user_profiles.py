@@ -48,3 +48,17 @@ def parse_users(path: Path) -> list[UserProfile]:
             raw=block.strip(),
         ))
     return users
+
+
+def filter_users(users: list[UserProfile], only_user: str | None) -> list[UserProfile]:
+    """Narrow to one named profile (case-insensitive), or return `users` unchanged
+    if `only_user` is None. Used by `--user` so a real run can target the one
+    profile you just added without regenerating lessons for everyone in users.md.
+    """
+    if not only_user:
+        return users
+    matches = [u for u in users if u.name.lower() == only_user.lower()]
+    if not matches:
+        names = [u.name for u in users]
+        raise ValueError(f"User '{only_user}' not found in users.md. Available: {names}")
+    return matches
