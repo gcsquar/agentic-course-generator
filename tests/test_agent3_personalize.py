@@ -47,6 +47,7 @@ def test_full_coverage_no_research(monkeypatch):
     assert pairs == {("Mike", 1), ("Mike", 2), ("Dana", 1), ("Dana", 2)}
     assert all(p.body.strip() for p in out)
     assert all(p.citations == [] for p in out)  # no gap flagged -> no research
+    assert all(p.fallback is False for p in out)  # successful drafts are not flagged fallback
 
 
 def test_research_loop_only_for_beginners(monkeypatch):
@@ -119,6 +120,7 @@ def test_llm_failure_degrades_to_original_body(monkeypatch):
     monkeypatch.setattr(a3.llm, "chat_json", boom)
     out = a3.personalize(_curriculum(), _users()[:1], mock=False, use_llm=True, do_research=False)
     assert out[0].body == "Attention lets each token weigh every other token."
+    assert out[0].fallback is True       # the untailored fallback is flagged, not silent
 
 
 def test_mock_mode_unchanged():

@@ -111,6 +111,7 @@ class PersonalizedLesson:
     body: str                      # tailored lesson text (markdown)
     citations: list[str] = field(default_factory=list)  # added-info sources
     topic_fit: str = ""            # non-empty when article topic poorly fits the user's interests
+    fallback: bool = False         # True if personalization failed and the UNtailored original shipped
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

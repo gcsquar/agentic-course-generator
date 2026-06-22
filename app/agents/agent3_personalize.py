@@ -133,24 +133,36 @@ def _personalize_lesson(user: UserProfile, lesson: Lesson, curriculum: Curriculu
     body = (draft.get("body") or "").strip() or lesson.body
     citations: list[str] = []
 
+    # Fail-soft visibility (ROADMAP 3.2): if the draft LLM call failed we shipped the
+    # UNtailored original — flag it so it isn't silently passed off as personalized (the
+    # faithfulness gate won't catch it: the original is faithful, just not tailored).
+    failed = bool(draft.get("_draft_failed"))
+    if failed:
+        print(f"[agent3] {user.name} lesson {lesson.order}: draft failed "
+              f"({draft.get('_error', 'error')}) — shipping untailored original (flagged fallback)")
+
     # Gap-filling research is for BEGINNERS only: an expert reading in their own field
     # doesn't need fetched background, and adding "go deeper" Scholar links to an expert's
-    # lesson reads as ungrounded external clutter (the auditor flagged exactly that).
+    # lesson reads as ungrounded external clutter (the auditor flagged exactly that). Skip
+    # it on a failed draft — there's no real tailoring to fill a gap into.
     gap_topic = draft.get("needs_background")
-    if do_research and gap_topic and _looks_like_beginner(user):
+    if do_research and gap_topic and not failed and _looks_like_beginner(user):
         query = _research_query(gap_topic, user)
         found = _safe_research(query)
         if found:
             text, url = found
             body = _weave_background(body, gap_topic, text, url)
             citations.append(url)
+            print(f"[research] HIT  '{gap_topic}' -> {url}")
         else:
             body = _append_scholar_fallback(body, gap_topic, query)
+            print(f"[research] MISS '{gap_topic}' — no trusted source, Scholar fallback")
 
     return PersonalizedLesson(
         user=user.name, order=lesson.order, title=lesson.title,
         body=body, citations=citations,
         topic_fit=draft.get("topic_fit") or "",
+        fallback=failed,
     )
 
 
@@ -281,9 +293,12 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
     )
     try:
         return llm.chat_json(system=system, user=user_msg, temperature=0.4)
-    except Exception:
-        # Fail soft: ship the untailored original rather than crash the whole run.
-        return {"body": lesson.body, "needs_background": None, "topic_fit": ""}
+    except Exception as exc:
+        # Fail soft: ship the untailored original rather than crash the whole run — but
+        # MARK it (ROADMAP 3.2) so the fallback is visible, not silently passed off as
+        # personalized. `_`-prefixed keys are internal signals, not part of the LLM schema.
+        return {"body": lesson.body, "needs_background": None, "topic_fit": "",
+                "_draft_failed": True, "_error": type(exc).__name__}
 
 
 def _weave_background(body: str, gap_topic: str, background_text: str, url: str) -> str:

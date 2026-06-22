@@ -26,6 +26,20 @@ def test_looks_like_news():
     assert not _looks_like_news("https://example.com/tutorial/transformers")
 
 
+def test_news_outlet_matched_by_host():
+    # known outlet, even without a /news/ path
+    assert _looks_like_news("https://www.bbc.com/article/123")
+    assert _looks_like_news("https://reuters.com/markets/x")
+    assert _looks_like_news("https://news.bbc.co.uk/story")
+
+
+def test_news_host_not_spoofed_by_substring():
+    # the old `"bbc." in url` test wrongly flagged these; host-boundary matching must not.
+    assert not _looks_like_news("https://abbc.company.com/tutorial")
+    assert not _looks_like_news("https://my-reuters.example.com/guide")
+    assert not _looks_like_news("https://example.com/bbc.-naming-conventions")
+
+
 def test_age_years():
     assert _age_years("") is None
     assert _age_years("not-a-date") is None

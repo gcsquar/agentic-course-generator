@@ -68,6 +68,9 @@ def _write_readable(run: Run, personalized: list, *, status: str = "passed",
         parts.append(f"## {user}\n\n")
         for l in sorted(lessons, key=lambda x: x.order):
             parts.append(f"### {l.order}. {l.title}\n\n")
+            if getattr(l, "fallback", False):
+                parts.append("> ⚠️ *Personalization failed for this lesson — showing the "
+                             "untailored original.*\n\n")
             parts.append(l.body.strip() + "\n\n")
             if getattr(l, "topic_fit", ""):
                 parts.append(f"> **Note:** {l.topic_fit}\n\n")

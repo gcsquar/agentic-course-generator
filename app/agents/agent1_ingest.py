@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import datetime
 import re
+import time
+import urllib.parse
 
 import requests
 import trafilatura
@@ -25,11 +27,20 @@ _HEADERS = {
     )
 }
 
-# URL-based news guess. Kept deliberately narrow: this signal now HARD-FAILS the
-# ingest gate, and Agent 1 gets 0 retries, so a false positive halts a good source.
-# Match clear news sections / outlets only — not the broad "/article/" many tutorial
-# sites use. The LLM judge is the broader, content-aware news check.
-_NEWS_HINTS = ("/news/", "cnn.", "bbc.", "nytimes.", "reuters.", "bloomberg.", "apnews.", "theguardian.")
+# How many extra times to retry a TRANSIENT fetch failure (timeout / connection / 5xx).
+# A bad source still gets 0 supervisor retries; this only makes the network resilient so
+# a flaky connection doesn't halt a good URL (a permanent 4xx is not retried).
+_FETCH_RETRIES = 2
+
+# URL-based news guess. Kept deliberately narrow: this signal now HARD-FAILS the ingest
+# gate, and Agent 1 gets 0 retries, so a false positive halts a good source. The LLM judge
+# is the broader, content-aware news check.
+#   - a "/news/" path SECTION is a strong section signal;
+#   - news OUTLETS are matched by HOST on a dot boundary, so "bbc.co.uk" matches but
+#     "abbc.company.com" does NOT (a plain `"bbc." in url` substring test let that through).
+_NEWS_PATH_HINTS = ("/news/",)
+_NEWS_DOMAINS = ("cnn.com", "bbc.com", "bbc.co.uk", "nytimes.com", "reuters.com",
+                 "bloomberg.com", "apnews.com", "theguardian.com")
 
 _MOCK = IngestResult(
     url="https://example.com/intro-to-transformers",
@@ -60,17 +71,31 @@ _MOCK = IngestResult(
 
 # helpers
 def _fetch(url: str) -> str | None:
-    """Fetch HTML. Falls back to a browser-like request if the default bot is blocked."""
-    html = trafilatura.fetch_url(url)
-    if html:
-        return html
+    """Fetch HTML, retrying TRANSIENT failures (timeout / connection / 5xx) with backoff.
 
-    try:
-        resp = requests.get(url, headers=_HEADERS, timeout=15)
-        resp.raise_for_status()
-        return resp.text
-    except requests.RequestException:
-        return None
+    Falls back to a browser-like request if trafilatura's default bot is blocked. A
+    permanent 4xx (404/403/410) is NOT retried — re-fetching can't fix it. This keeps a
+    flaky network from halting a good URL (Agent 1 itself gets 0 supervisor retries)."""
+    for attempt in range(_FETCH_RETRIES + 1):
+        html = trafilatura.fetch_url(url)
+        if html:
+            return html
+
+        try:
+            resp = requests.get(url, headers=_HEADERS, timeout=15)
+            resp.raise_for_status()
+            return resp.text
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status is not None and 400 <= status < 500:
+                return None        # permanent client error — don't retry
+            # 5xx -> transient, fall through to retry
+        except requests.RequestException:
+            pass                   # connection error / timeout -> transient, retry
+
+        if attempt < _FETCH_RETRIES:
+            time.sleep(2 ** attempt)   # 1s, 2s
+    return None
 
 
 def _extract_images(html: str) -> list[str]:
@@ -105,9 +130,14 @@ def _count_formulas(html: str, clean_text: str) -> int:
 
 
 def _looks_like_news(url: str) -> bool:
-    """Cheap URL-based guess: does this look like a news story?"""
-    u = url.lower()
-    return any(hint in u for hint in _NEWS_HINTS)
+    """Cheap URL-based guess: does this look like a news story? Matches a `/news/` path
+    section, or a known news OUTLET by host on a dot boundary (so `abbc.company.com`
+    is NOT mistaken for `bbc.com`)."""
+    parsed = urllib.parse.urlparse(url.lower())
+    host = parsed.netloc.split(":", 1)[0]
+    if any(hint in parsed.path for hint in _NEWS_PATH_HINTS):
+        return True
+    return any(host == d or host.endswith("." + d) for d in _NEWS_DOMAINS)
 
 
 def _age_years(published: str) -> float | None:
@@ -155,13 +185,16 @@ def ingest(url: str, *, mock: bool = False) -> IngestResult:
     if mock:
         return IngestResult(**{**_MOCK.to_dict(), "url": url})
 
-    # 1. Fetch the page (with a browser-like fallback)
+    # 1. Fetch the page (browser-like fallback + transient-failure retries inside _fetch)
     html = _fetch(url)
     if not html:
+        # A fetch failure is INFRASTRUCTURE, not a content judgment — flag it so the halt
+        # reads as "couldn't retrieve" rather than "rejected this source as unteachable".
         return IngestResult(
             url=url,
             accepted=False,
-            reason="Could not fetch the URL (network error, 404, or blocked).",
+            reason="Could not fetch the URL after retries (timeout, network error, 4xx, or blocked).",
+            meta={"fetch_failed": True},
         )
 
     # extracting a clean article text as markdown+metadata
