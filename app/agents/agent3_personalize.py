@@ -118,10 +118,21 @@ def _personalize_for_user(user: UserProfile, curriculum: Curriculum,
 
 
 def _feedback_for_lesson(user_feedback: list[str], order: int) -> list[str]:
-    """Keep only feedback lines about THIS lesson (word-boundary match on the
-    order number, so 'lesson 1' doesn't also match 'lesson 10')."""
-    pattern = re.compile(rf"lesson\s+{order}\b", re.IGNORECASE)
-    return [f for f in user_feedback if pattern.search(f)]
+    """Pick the feedback lines (already filtered to THIS user) relevant to THIS lesson:
+
+      - a line naming this lesson's order (word-boundary match, so 'lesson 1' doesn't
+        also catch 'lesson 10') -> precise routing, the common case;
+      - a line that names NO lesson order at all -> user-level feedback the gate couldn't
+        pin to a lesson (e.g. an LLM judge that omitted the number, surfaced by the gate as
+        'lesson unspecified'). Broadcast it to every lesson rather than silently drop it —
+        the regex router needs a real N, and a dropped issue means the model never sees a
+        wish it was supposed to fix.
+
+    A line naming a DIFFERENT lesson's number is excluded — it belongs to that lesson."""
+    this_lesson = re.compile(rf"lesson\s+{order}\b", re.IGNORECASE)
+    any_lesson = re.compile(r"lesson\s+\d+\b", re.IGNORECASE)
+    return [f for f in user_feedback
+            if this_lesson.search(f) or not any_lesson.search(f)]
 
 
 # ------------------------------------------------------------------- per-lesson

@@ -94,7 +94,15 @@ TRUSTED_DOMAINS = [
 RESEARCH_FETCH_CHARS = 4000      # cap text pulled from a researched page
 
 # --- Gate / retry policy ---
-MAX_RETRIES = 2                  # how many times the Supervisor re-runs a failed stage
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))   # default re-runs of a failed stage
+
+# Personalization (Agent 3) is the most expensive stage to retry (N users x M lessons x
+# draft + confirmation-draw), but also the one whose gate feedback is the most actionable
+# (per-learner, per-lesson "fix this") — so it gets its OWN, higher cap. NOTE: extra retries
+# only buy something while the stage keeps REDUCING its issue count; the early-stop
+# (ROADMAP 2.2) cuts a non-converging stage short regardless of this cap, so raising it does
+# nothing for a run that plateaus on "no improvement". Override with MAX_RETRIES_PERSONALIZE.
+MAX_RETRIES_PERSONALIZE = int(os.getenv("MAX_RETRIES_PERSONALIZE", "4"))
 
 # Escalation (ROADMAP 2.5): if the base generation model can't satisfy a stage's gate
 # within MAX_RETRIES (or stops converging), the Supervisor makes ONE final attempt on a

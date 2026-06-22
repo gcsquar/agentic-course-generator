@@ -112,6 +112,30 @@ def test_feedback_is_filtered_per_user_and_lesson(monkeypatch):
     assert "lesson 2 is empty" in dana_lesson2_prompt
 
 
+def test_unspecified_feedback_reaches_every_lesson(monkeypatch):
+    """A finding the gate couldn't pin to a lesson (no order number) must not be silently
+    dropped — it's broadcast to every lesson of that user, while a numbered line stays put."""
+    seen: list[str] = []
+
+    def fake_chat_json(system, user, temperature=None):
+        seen.append(user)
+        return {"body": "fixed", "needs_background": None}
+
+    monkeypatch.setattr(a3.llm, "chat_json", fake_chat_json)
+
+    feedback = [
+        "Mike lesson unspecified: tone is off across the board",  # no order -> all Mike lessons
+        "Mike lesson 2: drop the invented metric",                # order 2 -> only lesson 2
+    ]
+    a3.personalize(_curriculum(), _users()[:1], mock=False, use_llm=True,
+                   feedback=feedback, do_research=False)
+
+    mike1 = next(p for p in seen if "order 1)" in p)
+    mike2 = next(p for p in seen if "order 2)" in p)
+    assert "tone is off" in mike1 and "tone is off" in mike2   # broadcast to both
+    assert "invented metric" in mike2 and "invented metric" not in mike1  # numbered stays put
+
+
 def test_llm_failure_degrades_to_original_body(monkeypatch):
     """If the LLM call raises, ship the untailored original instead of crashing."""
     def boom(*args, **kwargs):

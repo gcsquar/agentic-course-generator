@@ -262,8 +262,20 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
         temperature=temperature,
         model=model or config.JUDGE_MODEL,
     )
-    return [
-        f"{user.name} lesson {i.get('lesson', '?')}: {i.get('problem', 'issue')}"
-        for i in verdict.get("issues", [])
-        if str(i.get("severity", "")).lower() == "high"
-    ]
+    # The agent's retry router keys feedback to a lesson by its order number, so a finding
+    # MUST carry a real one or it gets dropped. Only emit "lesson N" when N is an order the
+    # judge actually saw; if it omitted the number or named a non-existent lesson, tag it
+    # "lesson unspecified" so the agent broadcasts it to all of the user's lessons instead.
+    valid_orders = {p.order for p in lessons}
+    out: list[str] = []
+    for i in verdict.get("issues", []):
+        if str(i.get("severity", "")).lower() != "high":
+            continue
+        problem = i.get("problem", "issue")
+        try:
+            order = int(i.get("lesson"))
+        except (TypeError, ValueError):
+            order = None
+        where = f"lesson {order}" if order in valid_orders else "lesson unspecified"
+        out.append(f"{user.name} {where}: {problem}")
+    return out

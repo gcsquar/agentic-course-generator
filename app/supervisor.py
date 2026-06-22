@@ -84,6 +84,7 @@ class Supervisor:
                 curriculum, users, mock=self.mock, use_llm=self.use_llm, feedback=fb),
             gate=lambda a: gates.gate_personalize(a, curriculum, users, use_llm=self.use_llm),
             serialize=lambda a: [p.to_dict() for p in a],
+            retries=config.MAX_RETRIES_PERSONALIZE,   # own (higher) cap — see config note
         )
         self._record("03_personalized", g3, strict=strict)   # last stage: strict halt has nothing left to skip
 
