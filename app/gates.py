@@ -185,32 +185,41 @@ def gate_personalize(personalized: list[PersonalizedLesson], curriculum: Curricu
 
 def _judge_personalization_confirmed(user: UserProfile | None, lessons: list[PersonalizedLesson],
                                      originals: dict[int, "object"], full_source: str) -> list[str]:
-    """Judge once at temp 0; if it finds nothing, confirm with a second, hotter
-    sample before declaring this learner's lessons clean. A FAIL is trusted at once;
-    only a PASS is double-checked.
+    """Judge once at temp 0; a FAIL is trusted at once. A clean PASS is re-checked with a
+    second, INDEPENDENT sample before it's declared clean — closing the retry-until-lucky
+    loophole (INSIGHTS #2): the Supervisor re-runs a failed stage until its gate passes,
+    but one judge call is a single noisy sample, so the loop tends to stop on the first
+    *lenient* one — letting an invented "~3x faster" metric reach the gate-passed output.
 
-    Closes the failure mode the independent auditor caught: the Supervisor re-runs a
-    failed stage until its gate passes, but one judge call is a single noisy sample,
-    so the loop tends to stop on the first *lenient* sample — letting an invented
-    "~3x faster" metric reach the final, gate-passed artifact. The confirmation draw
-    runs hotter (not a temp-0 re-run, which would just reproduce the lenient verdict)
-    so it is a genuinely independent sample; any high-severity finding blocks. Extra
-    cost lands only on the attempts that were about to pass."""
+    What makes the confirmation draw independent matters (ROADMAP 2.4). Best: a DIFFERENT
+    model (`config.CONFIRM_MODEL`) — independence by construction, regardless of sampling.
+    Fallback (no CONFIRM_MODEL): a hotter-temperature draw of the same judge — which is a
+    genuine resample ONLY on models that actually vary with temperature; a reasoning model
+    that pins temperature makes it a no-op (then confirmation is just a temp-0 re-run, no
+    worse than a single sample). Either way a FAIL is trusted immediately, so extra cost
+    lands only on attempts that were about to pass. Any high finding from either blocks."""
     issues = _judge_personalization(user, lessons, originals, full_source, temperature=0.0)
-    if not issues:
-        issues = _judge_personalization(user, lessons, originals, full_source, temperature=0.5)
-    return issues
+    if issues:
+        return issues
+    confirm_model = config.CONFIRM_MODEL
+    if confirm_model and confirm_model != config.JUDGE_MODEL:
+        # Genuinely independent second opinion from a different model (temperature irrelevant).
+        return _judge_personalization(user, lessons, originals, full_source,
+                                      temperature=0.0, model=confirm_model)
+    # No distinct model configured: fall back to a hotter draw of the same judge.
+    return _judge_personalization(user, lessons, originals, full_source, temperature=0.5)
 
 
 def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedLesson],
                            originals: dict[int, "object"], full_source: str,
-                           *, temperature: float = 0.0) -> list[str]:
+                           *, temperature: float = 0.0, model: str | None = None) -> list[str]:
     """Compare each tailored lesson to its original; block on hallucination or clear
     level/tone mismatch. Stylistic nitpicks are low-severity and don't block.
 
     Hallucination is judged against `full_source` (the whole course), so a concept
-    established in another lesson is not mistaken for an invention.
-    `temperature` lets the confirmation pass draw an independent (hotter) sample."""
+    established in another lesson is not mistaken for an invention. `temperature` and
+    `model` let the confirmation pass draw an independent sample (hotter, or a different
+    model); `model` defaults to `config.JUDGE_MODEL`."""
     if user is None:
         return []
     blob = "\n\n".join(
@@ -251,7 +260,7 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
               f"FULL SOURCE (everything the course may faithfully draw on):\n{full_source}\n\n"
               f"LESSONS:\n{blob}"),
         temperature=temperature,
-        model=config.JUDGE_MODEL,
+        model=model or config.JUDGE_MODEL,
     )
     return [
         f"{user.name} lesson {i.get('lesson', '?')}: {i.get('problem', 'issue')}"

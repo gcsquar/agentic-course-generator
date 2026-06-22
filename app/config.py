@@ -47,6 +47,15 @@ TEMPERATURE = 0.3
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", "").strip() or MODEL
 AUDITOR_MODEL = os.getenv("AUDITOR_MODEL", "").strip() or MODEL
 
+# Confirmation-sampling (INSIGHTS #2): the personalization judge re-checks a clean PASS
+# with a SECOND, independent sample before trusting it, so the retry loop can't stop on
+# one lenient verdict. Independence is real only if the second draw differs from the
+# first. Set CONFIRM_MODEL to a DIFFERENT model for a genuinely independent second opinion
+# (it routes to its own provider like the others). If unset, the confirmation falls back
+# to a hotter-temperature draw of JUDGE_MODEL — which varies only on models that actually
+# sample (reasoning models that pin temperature make that draw a no-op).
+CONFIRM_MODEL = os.getenv("CONFIRM_MODEL", "").strip()
+
 # Per-request timeout (seconds) for LLM completions, so a hung call can't block an
 # Agent 3 worker thread forever. Override with LLM_TIMEOUT.
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))
@@ -86,6 +95,12 @@ RESEARCH_FETCH_CHARS = 4000      # cap text pulled from a researched page
 
 # --- Gate / retry policy ---
 MAX_RETRIES = 2                  # how many times the Supervisor re-runs a failed stage
+
+# Escalation (ROADMAP 2.5): if the base generation model can't satisfy a stage's gate
+# within MAX_RETRIES (or stops converging), the Supervisor makes ONE final attempt on a
+# STRONGER model. Set ESCALATION_MODEL to that model (it routes to its own provider like
+# the others). Unset -> no escalation. Affects GENERATION only; gates keep JUDGE_MODEL.
+ESCALATION_MODEL = os.getenv("ESCALATION_MODEL", "").strip()
 
 # --- Paths ---
 ROOT = Path(__file__).resolve().parent

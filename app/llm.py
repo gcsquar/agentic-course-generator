@@ -26,7 +26,10 @@ from typing import Any
 
 import config
 
-_client = None
+# One OpenAI-compatible client PER provider, built lazily and cached. Per-call model
+# routing (below) picks the right one, so generation can run on a cheap model while the
+# judge/auditor run on smarter ones — even on different providers in the same run.
+_clients: dict[str, Any] = {}
 _lock = threading.Lock()
 
 # How many times to retry on rate-limit / transient connection errors.
@@ -64,29 +67,48 @@ def reset_usage() -> None:
             _usage_totals[k] = 0
 
 
-# --- client -----------------------------------------------------------------
-def _get_client():
-    global _client
-    if _client is None:
-        with _lock:
-            if _client is None:
-                from openai import OpenAI
-                if not config.LLM_API_KEY:
-                    key_name = ("OPENROUTER_API_KEY" if config.LLM_PROVIDER == "openrouter"
-                                else "OPENAI_API_KEY")
+# --- client routing ---------------------------------------------------------
+def _provider_for_model(model: str) -> str:
+    """Which provider serves this model. OpenRouter slugs are namespaced
+    (`vendor/model`) or end in `:free`; everything else is treated as OpenAI. This
+    lets per-role models (config.MODEL / JUDGE_MODEL / AUDITOR_MODEL) live on
+    different providers without any extra config."""
+    m = (model or "").strip()
+    if "/" in m or m.endswith(":free"):
+        return "openrouter"
+    return "openai"
+
+
+def _client_for(provider: str):
+    """Lazily build + cache one client per provider, reading that provider's own key."""
+    client = _clients.get(provider)
+    if client is not None:
+        return client
+    with _lock:
+        client = _clients.get(provider)
+        if client is None:
+            from openai import OpenAI
+            if provider == "openrouter":
+                if not config.OPENROUTER_API_KEY:
                     raise RuntimeError(
-                        f"No API key for provider '{config.LLM_PROVIDER}'. Set {key_name} "
-                        "in .env (copy .env.example to .env and fill it in)."
+                        "A model is routed to OpenRouter but OPENROUTER_API_KEY is not set "
+                        "in .env (free at https://openrouter.ai/keys)."
                     )
-                kwargs: dict[str, Any] = {"api_key": config.LLM_API_KEY}
-                if config.LLM_BASE_URL:  # OpenRouter (OpenAI-compatible endpoint)
-                    kwargs["base_url"] = config.LLM_BASE_URL
-                    kwargs["default_headers"] = {
-                        "HTTP-Referer": "https://github.com/agentic-course-generator",
-                        "X-Title": "Agentic Course Generator",
-                    }
-                _client = OpenAI(**kwargs)
-    return _client
+                client = OpenAI(api_key=config.OPENROUTER_API_KEY,
+                                base_url="https://openrouter.ai/api/v1",
+                                default_headers={
+                                    "HTTP-Referer": "https://github.com/agentic-course-generator",
+                                    "X-Title": "Agentic Course Generator",
+                                })
+            else:
+                if not config.OPENAI_API_KEY:
+                    raise RuntimeError(
+                        "A model is routed to OpenAI but OPENAI_API_KEY is not set in .env "
+                        "(copy .env.example to .env and fill it in)."
+                    )
+                client = OpenAI(api_key=config.OPENAI_API_KEY)
+            _clients[provider] = client
+    return client
 
 
 def _call_with_retry(fn):
@@ -119,6 +141,7 @@ def _complete(messages: list[dict], *, model: str, temperature: float | None,
 
     send_json = want_json
     send_temp = temperature is not None
+    client = _client_for(_provider_for_model(model))
 
     for _ in range(3):   # at most: drop json, then drop temperature
         kwargs: dict[str, Any] = {
@@ -132,7 +155,7 @@ def _complete(messages: list[dict], *, model: str, temperature: float | None,
             kwargs["response_format"] = {"type": "json_object"}
 
         try:
-            resp = _call_with_retry(lambda: _get_client().chat.completions.create(**kwargs))
+            resp = _call_with_retry(lambda: client.chat.completions.create(**kwargs))
         except BadRequestError as exc:
             msg = str(exc).lower()
             if send_json and ("response_format" in msg or "json" in msg):

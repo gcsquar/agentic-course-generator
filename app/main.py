@@ -4,8 +4,10 @@
     python main.py <URL> --sequential  # plain Sequential baseline (Architecture v1)
     python main.py <URL> --mock        # no network/LLM — proves the wiring
     python main.py <URL> --user Mike   # personalize for one user.md profile only
+    python main.py <URL> --strict      # halt on the first failed gate (else: ship + mark degraded)
 
-Output lands in runs/<timestamp>/.
+Output lands in runs/<timestamp>/. Exit code reflects the run status:
+    0 = passed   ·   3 = degraded (shipped with unresolved gate issues)   ·   4 = halted
 """
 from __future__ import annotations
 
@@ -29,14 +31,21 @@ def main() -> None:
                         help="skip the independent end-of-run audit")
     parser.add_argument("--user", metavar="NAME", default=None,
                         help="personalize for a single user.md profile only, by name")
+    parser.add_argument("--strict", action="store_true",
+                        help="halt on the first failed gate (default: ship and mark degraded)")
     args = parser.parse_args()
 
+    # Exit code reflects the terminal run status so a caller/CI can tell a clean run
+    # from one that shipped with unresolved gate issues.
+    status = "passed"
     run = Run(run_id=datetime.now().strftime("%Y%m%d_%H%M%S"))
     try:
         if args.sequential:
             result = run_sequential(args.url, run, mock=args.mock, only_user=args.user)
         else:
-            result = Supervisor(run, mock=args.mock).build(args.url, only_user=args.user)
+            sup = Supervisor(run, mock=args.mock)
+            result = sup.build(args.url, only_user=args.user, strict=args.strict)
+            status = sup.status
     except ValueError as e:
         print(f"[main] {e}")
         sys.exit(1)
@@ -53,7 +62,8 @@ def main() -> None:
             print(f"[llm] run total: {u['calls']} calls, {u['total']} tokens "
                   f"(prompt={u['prompt']}, completion={u['completion']})")
 
-    print(f"\nDone. Outputs in: {run.dir}")
+    print(f"\nDone ({status}). Outputs in: {run.dir}")
+    sys.exit({"passed": 0, "degraded": 3, "halted": 4}.get(status, 0))
 
 
 if __name__ == "__main__":

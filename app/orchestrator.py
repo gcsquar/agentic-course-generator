@@ -48,12 +48,22 @@ def run_sequential(url: str, run: Run, *, mock: bool = False, only_user: str | N
     return personalized
 
 
-def _write_readable(run: Run, personalized: list) -> None:
+def _write_readable(run: Run, personalized: list, *, status: str = "passed",
+                    issues: dict[str, list[str]] | None = None) -> None:
     by_user: dict[str, list] = {}
     for p in personalized:
         by_user.setdefault(p.user, []).append(p)
 
-    parts: list[str] = ["# Personalized Lessons\n\n"]
+    parts: list[str] = []
+    if status and status != "passed":
+        # A reader must not mistake gate-failed output for clean output — lead with it.
+        parts.append(f"> ⚠️ **Run status: {status.upper()}** — one or more quality gates "
+                     f"did not pass; this output shipped with unresolved issues.\n")
+        for stage, stage_issues in (issues or {}).items():
+            parts.append(f">\n> **{stage}:**\n")
+            parts.extend(f"> - {i}\n" for i in stage_issues)
+        parts.append("\n")
+    parts.append("# Personalized Lessons\n\n")
     for user, lessons in by_user.items():
         parts.append(f"## {user}\n\n")
         for l in sorted(lessons, key=lambda x: x.order):
