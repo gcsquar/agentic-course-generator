@@ -4,6 +4,7 @@ showed a clever gate can miss (lesson count, dropped tail, lumping).
 """
 import config
 import gates
+import llm
 from contracts import Curriculum, Lesson, IngestResult, UserProfile, PersonalizedLesson
 
 
@@ -121,6 +122,35 @@ def test_personalize_complete_passes_without_llm():
     ]
     res = gates.gate_personalize(personalized, cur, users, use_llm=False)
     assert res.passed, res.issues
+
+
+def test_personalize_judge_gets_article_context_for_acronyms(monkeypatch):
+    captured = {}
+
+    def fake_chat_json(system, user, temperature=None, model=None):
+        captured["system"] = system
+        captured["user"] = user
+        return {"issues": []}
+
+    monkeypatch.setattr(llm, "chat_json", fake_chat_json)
+    user = UserProfile(name="Rita", raw="## Rita\nBeginner")
+    lesson = PersonalizedLesson(
+        user="Rita",
+        order=2,
+        title="Boosting",
+        body="GBDT means Gradient Boosted Decision Trees.",
+    )
+
+    gates._judge_one_personalized_lesson(
+        user,
+        lesson,
+        "This lesson mentions GBDT only.",
+        full_source_context="Gradient Boosted Decision Trees, also known as GBDT.",
+    )
+
+    assert "Use the ARTICLE-WIDE SOURCE CONTEXT only to resolve terms" in captured["system"]
+    assert "ARTICLE-WIDE SOURCE CONTEXT FOR TERMS/ALIASES/ACRONYMS ONLY" in captured["user"]
+    assert "Gradient Boosted Decision Trees, also known as GBDT" in captured["user"]
 
 
 # --------------------------------------------------- confirmation-sampling (INSIGHTS #2)

@@ -12,6 +12,7 @@ import config
 from contracts import (IngestResult, Curriculum, GateResult,
                        PersonalizedLesson, UserProfile)
 import llm
+import source_index
 
 
 def gate_ingest(result: IngestResult, *, use_llm: bool = True) -> GateResult:
@@ -62,7 +63,10 @@ def gate_ingest(result: IngestResult, *, use_llm: bool = True) -> GateResult:
             temperature=0.0,
             model=config.JUDGE_MODEL,
         )
-        if not verdict.get("passed", False):
+        passed = verdict.get("passed")
+        if passed is None and "accepted" in verdict:
+            passed = verdict.get("accepted")
+        if not passed:
             judge_issues = verdict.get("issues") or ["LLM judge rejected extracted article prose"]
             issues.extend(str(issue) for issue in judge_issues)
     return GateResult(passed=not issues, issues=issues)
@@ -164,9 +168,15 @@ def gate_personalize(personalized: list[PersonalizedLesson], curriculum: Curricu
         if not p.body.strip():
             issues.append(f"{p.user}: lesson {p.order} is empty")
 
+    originals = {l.order: l for l in curriculum.lessons}
+    for p in personalized:
+        original = originals.get(p.order)
+        if original is not None:
+            issues.extend(_check_supporting_quotes(p, getattr(original, "body", "")))
+            issues.extend(_check_supporting_sentences(p, getattr(original, "body", "")))
+
     # --- LLM judge per user (faithful to original + fits the profile) ---
     if use_llm:
-        originals = {l.order: l for l in curriculum.lessons}
         # Faithfulness is judged against the WHOLE course, not one slice: a term
         # established in another lesson is in-source, not invented. (Agent 2 is
         # extractive + tiles the article, so this concatenation ~= the full source.)
@@ -201,6 +211,8 @@ def _judge_personalization_confirmed(user: UserProfile | None, lessons: list[Per
     issues = _judge_personalization(user, lessons, originals, full_source, temperature=0.0)
     if issues:
         return issues
+    if not config.CONFIRM_PERSONALIZE_GATE:
+        return []
     confirm_model = config.CONFIRM_MODEL
     if confirm_model and confirm_model != config.JUDGE_MODEL:
         # Genuinely independent second opinion from a different model (temperature irrelevant).
@@ -213,62 +225,78 @@ def _judge_personalization_confirmed(user: UserProfile | None, lessons: list[Per
 def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedLesson],
                            originals: dict[int, "object"], full_source: str,
                            *, temperature: float = 0.0, model: str | None = None) -> list[str]:
-    """Compare each tailored lesson to its original; block on hallucination or clear
-    level/tone mismatch. Stylistic nitpicks are low-severity and don't block.
+    """Compare each tailored lesson to its own source span.
 
-    Hallucination is judged against `full_source` (the whole course), so a concept
-    established in another lesson is not mistaken for an invention. `temperature` and
-    `model` let the confirmation pass draw an independent sample (hotter, or a different
-    model); `model` defaults to `config.JUDGE_MODEL`."""
+    The old gate judged a whole user's course in one large prompt and missed unsupported
+    details buried mid-bundle. This keeps the public helper shape but performs smaller,
+    stricter per-lesson reviews internally.
+    """
     if user is None:
         return []
-    blob = "\n\n".join(
-        f"### [order {p.order}] {p.title}\n"
-        f"ORIGINAL: {getattr(originals.get(p.order), 'body', '(missing)')}\n"
-        f"TAILORED: {p.body}"
-        for p in sorted(lessons, key=lambda x: x.order)
-    )
+    out: list[str] = []
+    for p in sorted(lessons, key=lambda x: x.order):
+        original = originals.get(p.order)
+        if original is None:
+            continue
+        out.extend(_judge_one_personalized_lesson(
+            user, p, getattr(original, "body", ""), full_source_context=full_source,
+            temperature=temperature, model=model
+        ))
+    return out
+
+
+def _judge_one_personalized_lesson(user: UserProfile, lesson: PersonalizedLesson,
+                                   source_span: str, *, full_source_context: str = "",
+                                   temperature: float = 0.0, model: str | None = None) -> list[str]:
+    """Strict faithfulness judge for one generated lesson and its source span."""
+    indexed_source = source_index.render_indexed_source(source_span)
     verdict = llm.chat_json(
         system=(
-            "You review personalized lessons against their originals for one learner. "
-            "List issues, each with a severity:\n"
-            '- "high": the tailored lesson adds facts/numbers/formulas NOT supported anywhere '
-            "in the FULL SOURCE (shown below) and NOT cited (hallucination), OR is clearly "
+            "You review ONE personalized lesson against the exact source span it rewrote. "
+            "The source is indexed as `<s id=...>` sentences. List issues, each with a severity. "
+            "Be strict about source support and citation entailment:\n"
+            '- "high": the tailored lesson adds a factual claim, number, formula, complexity '
+            "claim, tool/API detail, implementation recommendation, tradeoff, or model name "
+            "that is NOT explicitly supported by the INDEXED SOURCE and is NOT clearly marked as "
+            "cited external background (hallucination), OR is clearly "
             "wrong for the learner's stated level (e.g. dense math given to a self-described "
             "beginner). NOTE: a term/concept that appears elsewhere in the FULL SOURCE (another "
-            "lesson) is faithful, not an invention — do not flag it.\n"
-            "  IMPORTANT DISTINCTION for beginner learners — two cases that look similar but "
-            "are treated differently:\n"
-            "  (1) Source USES/DISCUSSES a concept as part of the article's main argument: "
-            "a beginner lesson may explain what that concept means in plain language, even if "
-            "the source never defines it pedagogically. This is the point of personalization. "
-            "Only flag HIGH if the explanation contradicts how the source uses the concept, or "
-            "if it adds specific facts (exact numbers, formulas, causal claims) the source "
-            "never states. Example: source discusses 'manifold steering' throughout → a lay "
-            "definition for a beginner is NOT hallucination.\n"
-            "  (2) Source only NAMES something without discussion (a linked article, a cited "
-            "tool, a passing reference): do NOT explain what it is, what it does, or why it "
-            "fits — that IS hallucination even though the name appears in the source. Example: "
-            "source lists 'SVD' in one sentence without describing its role → any description "
-            "of SVD's role is invented. Flag HIGH.\n"
+            "lesson) is faithful, not an invention — do not flag it. BUT topic words appearing "
+            "in the source do NOT support a specific CLAIM: if the lesson describes, summarizes, "
+            "or characterizes a named item (a linked/recommended article, reference, or tool) "
+            "that the SOURCE only names without describing, that description is invented — flag "
+            "it high even though related words appear elsewhere in the source.\n"
             '- "high": a FORCED or DECORATIVE analogy — it relabels the source content in '
             "the learner's own jargon without making a genuinely hard idea easier to grasp "
             "(e.g. a cooking recipe rewritten so eggs are 'activation functions' and flour is "
             "'hyperparameters'). A good analogy clarifies a real difficulty; a meaningless one "
             "just translates vocabulary and must be sent back so the analogy is removed.\n"
             '- "low": minor tone/style mismatch, could be tailored more, OR a term that IS in '
-            "the FULL SOURCE but is used without much explanation. Using an in-source term "
+            "the INDEXED SOURCE but is used without much explanation. Using an in-source term "
             "without defining it is a clarity nuance, not a faithfulness error — and is "
             "appropriate for an advanced learner. Not blocking.\n"
+            "Use the ARTICLE-WIDE SOURCE CONTEXT only to resolve terms, aliases, and acronyms "
+            "defined elsewhere in the article; do not flag an acronym expansion when that "
+            "context explicitly defines it. Keep substantive lesson claims grounded in the "
+            "INDEXED SOURCE or cited external background.\n"
             "A faithful rephrasing at the right level is GOOD — do not raise high for that. A "
-            "term/fact present in the FULL SOURCE needs NO citation; only background ADDED from "
+            "term/fact present in the INDEXED SOURCE needs NO citation; only background ADDED from "
             "outside the source needs one — do not flag missing citations for in-source content.\n"
             'Return JSON {"issues": [{"severity": "high"|"low", "lesson": int, '
             '"problem": "<one short sentence>"}]}.'
         ),
-        user=(f"LEARNER PROFILE:\n{user.raw}\n\n"
-              f"FULL SOURCE (everything the course may faithfully draw on):\n{full_source}\n\n"
-              f"LESSONS:\n{blob}"),
+        user=(
+            f"LEARNER PROFILE:\n{user.raw}\n\n"
+            f"LESSON ORDER: {lesson.order}\n"
+            f"TITLE: {lesson.title}\n\n"
+            f"INDEXED SOURCE:\n{indexed_source}\n\n"
+            f"ARTICLE-WIDE SOURCE CONTEXT FOR TERMS/ALIASES/ACRONYMS ONLY:\n"
+            f"{full_source_context or source_span}\n\n"
+            f"MODEL-PROVIDED SUPPORTING SENTENCES:\n"
+            f"{getattr(lesson, 'supporting_sentences', [])}\n\n"
+            f"CITATIONS FOR EXTERNAL BACKGROUND:\n{lesson.citations or []}\n\n"
+            f"TAILORED LESSON:\n{lesson.body}"
+        ),
         temperature=temperature,
         model=model or config.JUDGE_MODEL,
     )
@@ -276,7 +304,6 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
     # MUST carry a real one or it gets dropped. Only emit "lesson N" when N is an order the
     # judge actually saw; if it omitted the number or named a non-existent lesson, tag it
     # "lesson unspecified" so the agent broadcasts it to all of the user's lessons instead.
-    valid_orders = {p.order for p in lessons}
     out: list[str] = []
     for i in verdict.get("issues", []):
         if str(i.get("severity", "")).lower() != "high":
@@ -286,6 +313,96 @@ def _judge_personalization(user: UserProfile | None, lessons: list[PersonalizedL
             order = int(i.get("lesson"))
         except (TypeError, ValueError):
             order = None
-        where = f"lesson {order}" if order in valid_orders else "lesson unspecified"
+        where = f"lesson {order}" if order == lesson.order else f"lesson {lesson.order}"
         out.append(f"{user.name} {where}: {problem}")
     return out
+
+
+def _check_supporting_quotes(lesson: PersonalizedLesson, source_span: str) -> list[str]:
+    """Validate Agent 3's evidence contract.
+
+    This is intentionally not a keyword blacklist: the model may include any detail it
+    can ground, but each supplied quote must be a real substring of the source span.
+    """
+    issues: list[str] = []
+    source_norm = _quote_norm(source_span)
+    for idx, item in enumerate(getattr(lesson, "supporting_quotes", []) or [], start=1):
+        quote = str(item.get("source_quote") or "").strip() if isinstance(item, dict) else ""
+        claim = str(item.get("claim") or "").strip() if isinstance(item, dict) else ""
+        if not quote:
+            issues.append(f"{lesson.user} lesson {lesson.order}: supporting quote {idx} is empty")
+            continue
+        if not _quote_supported(quote, source_span, source_norm):
+            label = f" for claim '{claim[:80]}'" if claim else ""
+            issues.append(
+                f"{lesson.user} lesson {lesson.order}: supporting quote {idx}{label} "
+                "does not appear in the source span"
+            )
+    return issues
+
+
+def _check_supporting_sentences(lesson: PersonalizedLesson, source_span: str) -> list[str]:
+    """Validate sentence-ID evidence anchors from Agent 3."""
+    issues: list[str] = []
+    valid_ids = source_index.valid_sentence_ids(source_span)
+    for idx, item in enumerate(getattr(lesson, "supporting_sentences", []) or [], start=1):
+        if not isinstance(item, dict):
+            issues.append(f"{lesson.user} lesson {lesson.order}: supporting sentence entry {idx} is invalid")
+            continue
+        claim = str(item.get("claim") or "").strip()
+        raw_ids = item.get("sentence_ids") or item.get("source_ids") or item.get("ids") or []
+        if isinstance(raw_ids, (str, int)):
+            raw_ids = [raw_ids]
+        ids = [str(s).strip() for s in raw_ids if str(s).strip()]
+        if not claim:
+            issues.append(f"{lesson.user} lesson {lesson.order}: supporting sentence entry {idx} has no claim")
+        if not ids:
+            issues.append(f"{lesson.user} lesson {lesson.order}: supporting sentence entry {idx} has no sentence IDs")
+            continue
+        bad = [sid for sid in ids if sid not in valid_ids]
+        if bad:
+            issues.append(
+                f"{lesson.user} lesson {lesson.order}: supporting sentence entry {idx} "
+                f"references unknown source sentence ID(s): {', '.join(bad)}"
+            )
+    return issues
+
+
+def _quote_norm(text: str) -> str:
+    return " ".join((text or "").split()).lower()
+
+
+def _quote_words(text: str) -> list[str]:
+    import re
+    return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+def _quote_supported(quote: str, source_span: str, source_norm: str) -> bool:
+    """Return whether a quote is grounded in the source, allowing markdown noise.
+
+    Exact normalized substring is preferred. The fallback compares the quote against
+    source windows of similar length so harmless punctuation/markdown differences do
+    not trigger expensive retries.
+    """
+    quote_norm = _quote_norm(quote)
+    if not quote_norm:
+        return False
+    if quote_norm in source_norm:
+        return True
+
+    from difflib import SequenceMatcher
+    quote_words = _quote_words(quote)
+    source_words = _quote_words(source_span)
+    n = len(quote_words)
+    if n < 4 or not source_words:
+        return False
+    stride = max(1, n // 3)
+    best = 0.0
+    for start in range(0, max(1, len(source_words) - n + 1), stride):
+        window = " ".join(source_words[start:start + n])
+        score = SequenceMatcher(None, " ".join(quote_words), window).ratio()
+        if score > best:
+            best = score
+        if best >= 0.65:
+            return True
+    return False

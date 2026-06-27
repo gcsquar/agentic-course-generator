@@ -47,12 +47,16 @@ def _record_usage(model: str, usage: Any) -> None:
     prompt = getattr(usage, "prompt_tokens", 0) or 0
     completion = getattr(usage, "completion_tokens", 0) or 0
     total = getattr(usage, "total_tokens", 0) or (prompt + completion)
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", 0) or 0 if details else 0
+    cache_write = getattr(details, "cache_write_tokens", 0) or 0 if details else 0
     with _usage_lock:
         _usage_totals["prompt"] += prompt
         _usage_totals["completion"] += completion
         _usage_totals["total"] += total
         _usage_totals["calls"] += 1
-    print(f"[llm] {model} tokens: prompt={prompt} completion={completion} total={total}")
+    cache_note = f" cached={cached} cache_write={cache_write}" if cached or cache_write else ""
+    print(f"[llm] {model} tokens: prompt={prompt} completion={completion} total={total}{cache_note}")
 
 
 def usage_summary() -> dict[str, int]:
@@ -141,7 +145,8 @@ def _complete(messages: list[dict], *, model: str, temperature: float | None,
 
     send_json = want_json
     send_temp = temperature is not None
-    client = _client_for(_provider_for_model(model))
+    provider_name = _provider_for_model(model)
+    client = _client_for(provider_name)
 
     for _ in range(3):   # at most: drop json, then drop temperature
         kwargs: dict[str, Any] = {
@@ -149,10 +154,30 @@ def _complete(messages: list[dict], *, model: str, temperature: float | None,
             "messages": messages,
             "timeout": config.LLM_TIMEOUT,
         }
+        extra_headers: dict[str, str] = {}
+        extra_body: dict[str, Any] = {}
+        if provider_name == "openrouter":
+            provider_prefs: dict[str, Any] = {
+                "allow_fallbacks": config.OPENROUTER_ALLOW_FALLBACKS,
+            }
+            if config.OPENROUTER_PROVIDER_ONLY:
+                provider_prefs["only"] = config.OPENROUTER_PROVIDER_ONLY
+            if config.OPENROUTER_REQUIRE_PARAMETERS:
+                provider_prefs["require_parameters"] = True
+            extra_body["provider"] = provider_prefs
+            if config.OPENROUTER_SESSION_ID:
+                extra_body["session_id"] = config.OPENROUTER_SESSION_ID
+            if config.OPENROUTER_CACHE:
+                extra_headers["X-OpenRouter-Cache"] = "true"
+                extra_headers["X-OpenRouter-Cache-TTL"] = str(config.OPENROUTER_CACHE_TTL)
         if send_temp:
             kwargs["temperature"] = temperature
         if send_json:
             kwargs["response_format"] = {"type": "json_object"}
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        if extra_headers:
+            kwargs["extra_headers"] = extra_headers
 
         try:
             resp = _call_with_retry(lambda: client.chat.completions.create(**kwargs))

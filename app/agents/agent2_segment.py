@@ -158,6 +158,15 @@ def segment(source: IngestResult, *, mock: bool = False, use_llm: bool = True,
         cuts = [(0, {"title": "Full article"})]
     if cuts[0][0] != 0:                # guarantee the source is covered from the top
         cuts[0] = (0, cuts[0][1])
+    max_lessons = max(config.MIN_LESSONS, config.MAX_LESSONS or 0)
+    if max_lessons and len(cuts) > max_lessons:
+        # Per-lesson personalization and verification fan out downstream. Keep the
+        # most representative ordered cut points while preserving source tiling.
+        keep_idx = sorted({round(i * (len(cuts) - 1) / (max_lessons - 1))
+                           for i in range(max_lessons)})
+        cuts = [cuts[i] for i in keep_idx]
+        if cuts[0][0] != 0:
+            cuts[0] = (0, cuts[0][1])
 
     lessons = []
     all_key_concepts = set()

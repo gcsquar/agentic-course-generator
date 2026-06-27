@@ -110,6 +110,8 @@ class PersonalizedLesson:
     title: str
     body: str                      # tailored lesson text (markdown)
     citations: list[str] = field(default_factory=list)  # added-info sources
+    supporting_quotes: list[dict[str, str]] = field(default_factory=list)  # claim -> exact source quote evidence
+    supporting_sentences: list[dict[str, Any]] = field(default_factory=list)  # claim -> source sentence IDs
     topic_fit: str = ""            # non-empty when article topic poorly fits the user's interests
     fallback: bool = False         # True if personalization failed and the UNtailored original shipped
 
