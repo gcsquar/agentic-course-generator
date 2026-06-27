@@ -58,6 +58,7 @@ from contracts import Curriculum, Lesson, PersonalizedLesson, UserProfile
 import config
 import llm
 import research
+import source_index
 
 # Fan-out across learners only (each learner's own lessons run sequentially).
 _MAX_WORKERS = 4
@@ -68,7 +69,8 @@ _BEGINNER_LEVELS = {"beginner", "novice", "new", "intro", "introductory"}
 def personalize(curriculum: Curriculum, users: list[UserProfile], *,
                 mock: bool = False, use_llm: bool = True,
                 feedback: list[str] | None = None,
-                do_research: bool = True) -> list[PersonalizedLesson]:
+                do_research: bool = True,
+                previous: list[PersonalizedLesson] | None = None) -> list[PersonalizedLesson]:
     if mock or not use_llm:
         out: list[PersonalizedLesson] = []
         for u in users:
@@ -76,14 +78,17 @@ def personalize(curriculum: Curriculum, users: list[UserProfile], *,
                 out.append(PersonalizedLesson(
                     user=u.name, order=l.order, title=l.title,
                     body=f"[for {u.name} · {u.level}] {l.body}",
+                    supporting_quotes=[],
+                    supporting_sentences=[],
                 ))
         return out
 
     feedback = feedback or []
     results: list[PersonalizedLesson] = []
+    previous_by_key = {(p.user, p.order): p for p in (previous or [])}
 
     def _do_user(user: UserProfile) -> list[PersonalizedLesson]:
-        return _personalize_for_user(user, curriculum, feedback, do_research)
+        return _personalize_for_user(user, curriculum, feedback, do_research, previous_by_key)
 
     if len(users) > 1:
         with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(users))) as pool:
@@ -104,13 +109,23 @@ def personalize(curriculum: Curriculum, users: list[UserProfile], *,
 # --------------------------------------------------------------------- per-user
 
 def _personalize_for_user(user: UserProfile, curriculum: Curriculum,
-                           feedback: list[str], do_research: bool) -> list[PersonalizedLesson]:
+                           feedback: list[str], do_research: bool,
+                           previous_by_key: dict[tuple[str, int], PersonalizedLesson]) -> list[PersonalizedLesson]:
     user_feedback = [f for f in feedback if user.name.lower() in f.lower()]
     out: list[PersonalizedLesson] = []
     covered: list[str] = []   # concepts taught in EARLIER lessons of this course
     for lesson in sorted(curriculum.lessons, key=lambda l: l.order):
         lesson_feedback = _feedback_for_lesson(user_feedback, lesson.order)
-        out.append(_personalize_lesson(user, lesson, curriculum, lesson_feedback, do_research, covered))
+        previous_lesson = previous_by_key.get((user.name, lesson.order))
+        if previous_lesson and feedback and not lesson_feedback:
+            # On a retry, preserve lessons the gate did not complain about. Regenerating
+            # clean lessons wastes calls and can introduce new unsupported claims.
+            out.append(previous_lesson)
+            covered.extend(lesson.key_concepts)
+            continue
+        out.append(_personalize_lesson(
+            user, lesson, curriculum, lesson_feedback, do_research, covered, previous_lesson
+        ))
         # A term introduced here is "already taught" for every later lesson, so a
         # later lesson may reference it freely instead of flagging it as background.
         covered.extend(lesson.key_concepts)
@@ -139,10 +154,15 @@ def _feedback_for_lesson(user_feedback: list[str], order: int) -> list[str]:
 
 def _personalize_lesson(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
                          lesson_feedback: list[str], do_research: bool,
-                         covered: list[str]) -> PersonalizedLesson:
-    draft = _generate_draft(user, lesson, curriculum, lesson_feedback, covered)
+                         covered: list[str], previous_lesson: PersonalizedLesson | None) -> PersonalizedLesson:
+    repairing = bool(lesson_feedback and previous_lesson and not previous_lesson.fallback)
+    if repairing:
+        draft = _repair_draft(user, lesson, curriculum, lesson_feedback, covered, previous_lesson)
+    else:
+        draft = _generate_draft(user, lesson, curriculum, lesson_feedback, covered)
     body = (draft.get("body") or "").strip() or lesson.body
-    citations: list[str] = []
+    supporting_sentences = _supporting_sentences(draft.get("supporting_sentences"))
+    citations: list[str] = list(previous_lesson.citations) if repairing and previous_lesson else []
 
     # Fail-soft visibility (ROADMAP 3.2): if the draft LLM call failed we shipped the
     # UNtailored original — flag it so it isn't silently passed off as personalized (the
@@ -171,10 +191,29 @@ def _personalize_lesson(user: UserProfile, lesson: Lesson, curriculum: Curriculu
 
     return PersonalizedLesson(
         user=user.name, order=lesson.order, title=lesson.title,
-        body=body, citations=citations,
+        body=body, citations=citations, supporting_quotes=[],
+        supporting_sentences=supporting_sentences,
         topic_fit=draft.get("topic_fit") or "",
         fallback=failed,
     )
+
+
+def _supporting_sentences(value) -> list[dict[str, object]]:
+    """Normalize the model's evidence contract to {claim, sentence_ids}."""
+    if not isinstance(value, list):
+        return []
+    out: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        claim = str(item.get("claim") or "").strip()
+        raw_ids = item.get("sentence_ids") or item.get("source_ids") or item.get("ids") or []
+        if isinstance(raw_ids, (str, int)):
+            raw_ids = [raw_ids]
+        ids = [str(s).strip() for s in raw_ids if str(s).strip()]
+        if claim and ids:
+            out.append({"claim": claim, "sentence_ids": ids})
+    return out
 
 
 def _looks_like_beginner(user: UserProfile) -> bool:
@@ -262,11 +301,19 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "when they appear in the source, but don't add or emphasize metrics that aren't central.\n"
         "  When in doubt, look at the learner's role and interests to decide: a manager or "
         "analyst likely wants numbers; a student or general reader is fine with words.\n\n"
-        "STEP 2 — write the tailored lesson:\n"
-        "- Faithfulness scope: you may use any concept that appears in the ORIGINAL lesson "
-        "OR was ALREADY TAUGHT in an earlier lesson (listed below). Those are established — "
-        "reference them freely (a one-line recall is fine). Never invent facts, numbers, "
-        "formulas, terms, or model names from outside that scope, even if you know them.\n"
+        "STEP 2 — write the tailored lesson from SOURCE CLAIMS ONLY:\n"
+        "- Faithfulness scope: every factual claim, formula, number, tradeoff, recommendation, "
+        "tool/API mention, complexity statement, and implementation detail must be explicitly "
+        "supported by the ORIGINAL lesson text below. Do NOT add facts from your general ML "
+        "knowledge, even if they are true.\n"
+        "- Earlier lessons are shown only for brief recall/context. You may refer to their topic "
+        "names, but you may not introduce new factual claims from earlier lessons into this one.\n"
+        "- If the learner asks for tradeoffs but the ORIGINAL lesson does not state a tradeoff, "
+        "say 'The source does not cover that tradeoff' rather than filling it in.\n"
+        "- Do not introduce alternate technical labels, algorithms, variants, or library names "
+        "unless those exact ideas appear in the ORIGINAL lesson. Examples: do not say ordinary "
+        "least squares, residual sum of squares, stochastic/mini-batch/online variants, SVD, "
+        "SGDRegressor, Adam, or robust regression unless the ORIGINAL lesson says them.\n"
         "- If the lesson assumes a prerequisite that is in NEITHER the original NOR the "
         "already-taught list, do NOT invent or explain it from your own knowledge — name it "
         "in `needs_background` so it can be researched and cited.\n"
@@ -286,30 +333,91 @@ def _generate_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
         "recipe ingredients 'training data' or 'activation functions') adds no understanding "
         "and is worse than none — omit it. Never force one to satisfy a stated style.\n"
         "- Honor the learner's stated focus and preferred language if given in their profile.\n"
+        "- Evidence contract: the source is shown as indexed `<s id=...>` sentences. Include "
+        "`supporting_sentences` for the substantive claims in your rewrite. Each item must pair "
+        "your claim with the sentence ID(s) that DIRECTLY support it. If no source sentence IDs "
+        "directly support a claim, remove the claim.\n"
         "- In `topic_fit`: if misaligned, write one short sentence (e.g. 'Outside learner's "
         "domain — delivered as accessible overview for a smart non-specialist'). Empty if aligned.\n\n"
         'Return ONLY JSON: {"body": "<tailored lesson in markdown>", '
+        '"supporting_sentences": [{"claim": "<claim in your rewrite>", '
+        '"sentence_ids": ["1", "2"]}], '
         '"needs_background": "<short topic, or null>", '
         '"topic_fit": "<one sentence if misaligned, else empty string>"}'
     )
+    indexed_source = source_index.render_indexed_source(
+        lesson.body[:config.PERSONALIZE_LESSON_CHARS]
+    )
     user_msg = (
         f"LEARNER PROFILE:\n{user.raw[:config.PERSONALIZE_PROFILE_CHARS]}\n\n"
-        f"ARTICLE KEY CONCEPTS: {', '.join(curriculum.key_concepts) or '(none listed)'}\n\n"
-        f"ALREADY TAUGHT in earlier lessons (use freely, no background needed): "
+        f"ARTICLE KEY CONCEPTS (navigation labels only; NOT factual support): "
+        f"{', '.join(curriculum.key_concepts) or '(none listed)'}\n\n"
+        f"EARLIER LESSON TOPICS (continuity labels only; NOT factual support for this lesson): "
         f"{', '.join(dict.fromkeys(covered)) or '(none yet — this is among the first lessons)'}\n\n"
         f"ORIGINAL LESSON (order {lesson.order}): {lesson.title}\n"
-        f"{lesson.body[:config.PERSONALIZE_LESSON_CHARS]}\n"
+        f"{indexed_source}\n"
         f"Lesson key concepts: {', '.join(lesson.key_concepts) or '(none listed)'}"
         f"{feedback_note}"
     )
     try:
-        return llm.chat_json(system=system, user=user_msg, temperature=0.4)
+        return llm.chat_json(system=system, user=user_msg, temperature=0.1)
     except Exception as exc:
         # Fail soft: ship the untailored original rather than crash the whole run — but
         # MARK it (ROADMAP 3.2) so the fallback is visible, not silently passed off as
         # personalized. `_`-prefixed keys are internal signals, not part of the LLM schema.
         return {"body": lesson.body, "needs_background": None, "topic_fit": "",
                 "_draft_failed": True, "_error": type(exc).__name__}
+
+
+def _repair_draft(user: UserProfile, lesson: Lesson, curriculum: Curriculum,
+                  lesson_feedback: list[str], covered: list[str],
+                  previous_lesson: PersonalizedLesson) -> dict:
+    """Repair a failed personalized lesson without regenerating from scratch.
+
+    The retry loop was previously whack-a-mole: a fresh generation removed one
+    unsupported claim and introduced another. This prompt constrains retries to
+    deleting or minimally rewriting only the gate-flagged unsupported content.
+    """
+    indexed_source = source_index.render_indexed_source(
+        lesson.body[:config.PERSONALIZE_LESSON_CHARS]
+    )
+    system = (
+        "You are repairing a previous personalized lesson that failed a faithfulness gate. "
+        "Your job is NOT to write a new lesson. Preserve the previous draft as much as possible.\n\n"
+        "Rules:\n"
+        "- Fix ONLY the listed gate issues.\n"
+        "- Prefer deleting unsupported claims over replacing them.\n"
+        "- If replacement is necessary, use only facts directly supported by the indexed source sentences.\n"
+        "- Do NOT add new examples, formulas, methods, applications, tools, conditions, or tradeoffs.\n"
+        "- Do NOT move facts from other lessons into this lesson.\n"
+        "- Keep the learner-specific tone/level where possible, but factual faithfulness wins.\n"
+        "- For each substantive claim that remains, include `supporting_sentences` with sentence IDs "
+        "that directly support that claim. If no sentence IDs directly support it, remove the claim.\n"
+        'Return ONLY JSON: {"body": "<repaired lesson markdown>", '
+        '"supporting_sentences": [{"claim": "<claim in repaired lesson>", '
+        '"sentence_ids": ["1", "2"]}], '
+        '"needs_background": null, '
+        '"topic_fit": "<same topic_fit as before, or empty string>"}'
+    )
+    user_msg = (
+        f"LEARNER PROFILE:\n{user.raw[:config.PERSONALIZE_PROFILE_CHARS]}\n\n"
+        f"ORIGINAL LESSON (order {lesson.order}): {lesson.title}\n"
+        f"{indexed_source}\n\n"
+        f"PREVIOUS PERSONALIZED DRAFT:\n{previous_lesson.body}\n\n"
+        f"PREVIOUS SUPPORTING SENTENCES:\n{previous_lesson.supporting_sentences}\n\n"
+        "GATE ISSUES TO FIX:\n- " + "\n- ".join(lesson_feedback)
+    )
+    try:
+        return llm.chat_json(system=system, user=user_msg, temperature=0.0)
+    except Exception as exc:
+        return {
+            "body": previous_lesson.body,
+            "supporting_sentences": previous_lesson.supporting_sentences,
+            "needs_background": None,
+            "topic_fit": previous_lesson.topic_fit,
+            "_draft_failed": True,
+            "_error": type(exc).__name__,
+        }
 
 
 def _weave_background(body: str, gap_topic: str, background_text: str, url: str) -> str:

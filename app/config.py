@@ -14,13 +14,43 @@ try:
 except ImportError:  # dotenv optional; env vars may be set another way
     pass
 
+
+def _load_openrouter_key_file() -> str:
+    """Load a local OpenRouter key file without requiring it to be valid Python.
+
+    Supports either a raw key as the first non-comment line, or a simple
+    assignment like `OPENROUTER_API_KEY = "..."`. Env vars still override this.
+    """
+    path = Path(os.getenv(
+        "OPENROUTER_API_KEY_FILE",
+        str(Path(__file__).resolve().parents[1] / "openrouter_key.py"),
+    )).expanduser()
+    if not path.exists():
+        return ""
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            line = line.split("=", 1)[1].strip()
+        value = line.strip().strip('"\'')
+        if value.startswith("sk-"):
+            return value
+    return ""
+
 # --- LLM provider (OpenAI by default; OpenRouter for FREE models) ------------
 # OpenRouter is OpenAI-API-compatible and offers free models (the ":free" variants),
 # so the whole pipeline can run without OpenAI credit. Put OPENROUTER_API_KEY (and
 # optionally OPENROUTER_MODEL) in .env. Force a provider with LLM_PROVIDER=openrouter|openai;
 # otherwise we auto-pick OpenRouter only when it is the only key present.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "") or _load_openrouter_key_file()
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower()
 if LLM_PROVIDER not in ("openai", "openrouter"):
@@ -29,8 +59,8 @@ if LLM_PROVIDER not in ("openai", "openrouter"):
 if LLM_PROVIDER == "openrouter":
     LLM_API_KEY = OPENROUTER_API_KEY
     LLM_BASE_URL = "https://openrouter.ai/api/v1"
-    # A free, JSON-capable default; override with OPENROUTER_MODEL (free slugs end in ":free").
-    MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+    # Override with OPENROUTER_MODEL when needed.
+    MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-pro")
 else:
     LLM_API_KEY = OPENAI_API_KEY
     LLM_BASE_URL = None                       # None -> OpenAI SDK uses its default endpoint
@@ -60,6 +90,21 @@ CONFIRM_MODEL = os.getenv("CONFIRM_MODEL", "").strip()
 # Agent 3 worker thread forever. Override with LLM_TIMEOUT.
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))
 
+# OpenRouter routing/caching. Keep the app pinned to DeepSeek unless explicitly
+# overridden; disabling fallbacks makes provider drift visible instead of silent.
+OPENROUTER_PROVIDER_ONLY = [p.strip() for p in os.getenv(
+    "OPENROUTER_PROVIDER_ONLY", "deepseek"
+).split(",") if p.strip()]
+OPENROUTER_ALLOW_FALLBACKS = os.getenv("OPENROUTER_ALLOW_FALLBACKS", "false").lower() in (
+    "1", "true", "yes", "on"
+)
+OPENROUTER_REQUIRE_PARAMETERS = os.getenv("OPENROUTER_REQUIRE_PARAMETERS", "false").lower() in (
+    "1", "true", "yes", "on"
+)
+OPENROUTER_CACHE = os.getenv("OPENROUTER_CACHE", "true").lower() in ("1", "true", "yes", "on")
+OPENROUTER_CACHE_TTL = os.getenv("OPENROUTER_CACHE_TTL", "3600")
+OPENROUTER_SESSION_ID = os.getenv("OPENROUTER_SESSION_ID", "agentic-course-generator")[:256]
+
 # --- Gate thresholds (Agent 1) ---
 MIN_ARTICLE_CHARS = 600          # shorter than this -> probably not teachable
 
@@ -73,6 +118,9 @@ SEGMENT_MAX_PARAGRAPHS = 400
 # certainly lumped several subtopics (one 52-paragraph lesson held a quarter of an article).
 # Generous on purpose — a genuinely coherent subtopic can be large; this only catches dumping.
 MAX_LESSON_PARAGRAPHS = 30
+# Cap lesson count so per-lesson personalization checks stay tractable. Agent 2
+# still tiles the whole source; extra fine-grained cuts are merged.
+MAX_LESSONS = int(os.getenv("MAX_LESSONS", "12"))
 
 # Faithfulness reference window: how much SOURCE the personalization gate and the
 # independent auditor may see when judging "is this claim in the source?". Must be big
@@ -103,6 +151,13 @@ MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))   # default re-runs of a failed
 # (ROADMAP 2.2) cuts a non-converging stage short regardless of this cap, so raising it does
 # nothing for a run that plateaus on "no improvement". Override with MAX_RETRIES_PERSONALIZE.
 MAX_RETRIES_PERSONALIZE = int(os.getenv("MAX_RETRIES_PERSONALIZE", "4"))
+
+# Per-lesson personalization judging is already much smaller and stricter than the
+# old whole-course judge. Keep confirmation available, but allow real runs to skip
+# the second pass when cost/latency matters.
+CONFIRM_PERSONALIZE_GATE = os.getenv("CONFIRM_PERSONALIZE_GATE", "true").lower() in (
+    "1", "true", "yes", "on"
+)
 
 # Escalation (ROADMAP 2.5): if the base generation model can't satisfy a stage's gate
 # within MAX_RETRIES (or stops converging), the Supervisor makes ONE final attempt on a

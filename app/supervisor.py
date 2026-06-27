@@ -22,6 +22,7 @@ gate failures fall through. The Supervisor instead OWNS the run:
 """
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 import config
@@ -80,8 +81,9 @@ class Supervisor:
         users = user_profiles.filter_users(users, only_user)
         personalized, g3 = self._stage(
             "03_personalized",
-            produce=lambda fb: agent3_personalize.personalize(
-                curriculum, users, mock=self.mock, use_llm=self.use_llm, feedback=fb),
+            produce=lambda fb, prev=None: agent3_personalize.personalize(
+                curriculum, users, mock=self.mock, use_llm=self.use_llm,
+                feedback=fb, previous=prev),
             gate=lambda a: gates.gate_personalize(a, curriculum, users, use_llm=self.use_llm),
             serialize=lambda a: [p.to_dict() for p in a],
             retries=config.MAX_RETRIES_PERSONALIZE,   # own (higher) cap — see config note
@@ -138,7 +140,8 @@ class Supervisor:
 
         # Phase 1 — the base model, with informed retries and early-stop on non-convergence.
         for attempt in range(1, retries + 2):   # 1 initial + `retries`
-            artifact, result = self._attempt(name, attempt, produce, gate, serialize, feedback)
+            artifact, result = self._attempt(name, attempt, produce, gate, serialize, feedback,
+                                             previous=artifact)
             if result.passed:
                 break
             feedback = result.issues   # informed feedback for the next produce()
@@ -161,7 +164,8 @@ class Supervisor:
             attempt += 1
             print(f"[supervisor] {name}: escalating final attempt to {config.ESCALATION_MODEL}")
             artifact, result = self._attempt(name, attempt, produce, gate, serialize,
-                                             feedback, model=config.ESCALATION_MODEL)
+                                             feedback, model=config.ESCALATION_MODEL,
+                                             previous=artifact)
 
         # canonical (final) artifact for downstream stages / readers
         self.state[name] = artifact
@@ -169,8 +173,9 @@ class Supervisor:
         return artifact, result
 
     def _attempt(self, name: str, attempt: int, produce: Callable[[list[str]], Any],
-                 gate: Callable[[Any], GateResult], serialize: Callable[[Any], Any] | None,
-                 feedback: list[str], *, model: str | None = None) -> tuple[Any, GateResult]:
+                  gate: Callable[[Any], GateResult], serialize: Callable[[Any], Any] | None,
+                  feedback: list[str], *, model: str | None = None,
+                  previous: Any = None) -> tuple[Any, GateResult]:
         """One produce -> persist -> gate -> persist cycle. On an escalation attempt
         (`model` set) the GENERATION model is overridden for the duration of produce()
         only — gates keep their own JUDGE_MODEL, and the override is restored even on
@@ -180,11 +185,11 @@ class Supervisor:
             saved = config.MODEL
             config.MODEL = model
             try:
-                artifact = produce(feedback)
+                artifact = self._produce(produce, feedback, previous)
             finally:
                 config.MODEL = saved
         else:
-            artifact = produce(feedback)
+            artifact = self._produce(produce, feedback, previous)
 
         payload = serialize(artifact) if serialize else artifact.to_dict()
         self.run.save_json(f"{name}__try{attempt}", payload)
@@ -194,3 +199,14 @@ class Supervisor:
         suffix = f" [escalated:{model}]" if model else ""
         print(f"[supervisor] {name} try {attempt}{suffix}: {tag}")
         return artifact, result
+
+    @staticmethod
+    def _produce(produce: Callable, feedback: list[str], previous: Any) -> Any:
+        """Call a stage producer, passing previous artifact only if it accepts it."""
+        try:
+            n_params = len(inspect.signature(produce).parameters)
+        except (TypeError, ValueError):
+            n_params = 1
+        if n_params >= 2:
+            return produce(feedback, previous)
+        return produce(feedback)
