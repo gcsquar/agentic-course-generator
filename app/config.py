@@ -14,43 +14,13 @@ try:
 except ImportError:  # dotenv optional; env vars may be set another way
     pass
 
-
-def _load_openrouter_key_file() -> str:
-    """Load a local OpenRouter key file without requiring it to be valid Python.
-
-    Supports either a raw key as the first non-comment line, or a simple
-    assignment like `OPENROUTER_API_KEY = "..."`. Env vars still override this.
-    """
-    path = Path(os.getenv(
-        "OPENROUTER_API_KEY_FILE",
-        str(Path(__file__).resolve().parents[1] / "openrouter_key.py"),
-    )).expanduser()
-    if not path.exists():
-        return ""
-
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return ""
-
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            line = line.split("=", 1)[1].strip()
-        value = line.strip().strip('"\'')
-        if value.startswith("sk-"):
-            return value
-    return ""
-
 # --- LLM provider (OpenAI by default; OpenRouter for FREE models) ------------
 # OpenRouter is OpenAI-API-compatible and offers free models (the ":free" variants),
 # so the whole pipeline can run without OpenAI credit. Put OPENROUTER_API_KEY (and
 # optionally OPENROUTER_MODEL) in .env. Force a provider with LLM_PROVIDER=openrouter|openai;
 # otherwise we auto-pick OpenRouter only when it is the only key present.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "") or _load_openrouter_key_file()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower()
 if LLM_PROVIDER not in ("openai", "openrouter"):
